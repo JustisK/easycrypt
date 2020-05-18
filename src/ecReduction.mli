@@ -33,6 +33,10 @@ module EqTest : sig
   val for_stmt  : stmt     eqntest
   val for_expr  : expr     eqntest
 
+  val for_module_sig  : module_sig  eqntest
+  val for_module_expr : module_expr eqntest
+
+
   val is_unit : env -> ty -> bool
   val is_bool : env -> ty -> bool
   val is_int  : env -> ty -> bool

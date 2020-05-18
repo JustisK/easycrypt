@@ -20,6 +20,7 @@ module BI = EcBigInt
 (* -------------------------------------------------------------------- *)
 exception IncompatibleType of env * (ty * ty)
 exception IncompatibleForm of env * (form * form)
+exception IncompatibleModuleSig of module_sig * module_sig
 
 (* -------------------------------------------------------------------- *)
 type 'a eqtest  = env -> 'a -> 'a -> bool
@@ -226,6 +227,124 @@ module EqTest = struct
 
     | _, _ -> false
 
+  (* -------------------------------------------------------------------- *)
+
+  let for_funsig env fs1 fs2 =
+    (* Should we test also fs_anames ? *)
+    fs1.fs_name = fs2.fs_name &&
+      for_type env fs1.fs_arg fs2.fs_arg &&
+        for_type env fs1.fs_ret fs2.fs_ret
+
+  let for_oracle_info env ~norm oi1 oi2 =
+    List.for_all2 (for_xp env ~norm) oi1.oi_calls oi2.oi_calls &&
+      oi1.oi_in = oi2.oi_in
+
+  (* -------------------------------------------------------------------- *)
+
+  let add_modules p1 p2 : EcSubst.subst =
+    List.fold_left2 (fun s (id1,_) (id2,_) ->
+        EcSubst.add_module s id1 (EcPath.mident id2)) EcSubst.empty p1 p2
+
+  let rec for_module_type env ~norm mt1 mt2 =
+    let p1 = mt1.mt_params in
+    let p2 = mt2.mt_params in
+    List.for_all2
+      (fun (_,mt1) (_,mt2) -> for_module_type env ~norm mt1 mt2) p1 p2 &&
+    let s = add_modules p2 p1 in
+    let args1 = mt1.mt_args in
+    let args2 = List.map (EcSubst.subst_mpath s) mt2.mt_args in
+    EcPath.p_equal mt1.mt_name mt2.mt_name &&
+      List.for_all2 (for_mp env ~norm) args1 args2
+
+  let for_module_sig_body_item env ~norm i1 i2 =
+    match i1, i2 with
+    | Tys_function (fs1,oi1), Tys_function(fs2,oi2) ->
+      for_funsig env fs1 fs2 &&
+        for_oracle_info env norm oi1 oi2
+
+  let for_module_sig_body env ~norm b1 b2 =
+    List.for_all2 (for_module_sig_body_item env ~norm) b1 b2
+
+  let for_module_sig env ~norm ms1 ms2 =
+    let p1 = ms1.mis_params in
+    let p2 = ms2.mis_params in
+    List.for_all2
+      (fun (_,mt1) (_,mt2) -> for_module_type env ~norm mt1 mt2) p1 p2 &&
+    let s = add_modules p2 p1 in
+    let body1 = ms1.mis_body in
+    let body2 = EcSubst.subst_modsig_body s ms2.mis_body in
+    for_module_sig_body env ~norm body1 body2
+
+  (* ------------------------------------------------------------------ *)
+
+  let for_variable env v1 v2 =
+    v1.v_name = v2.v_name && for_type env v1.v_type v2.v_type
+
+  let for_function_def env ~norm fd1 fd2 =
+    let cmp_v v1 v2 = compare v1.v_name v2.v_name in
+    let locals1 = List.sort cmp_v fd1.f_locals in
+    let locals2 = List.sort cmp_v fd2.f_locals in
+    List.for_all2 (for_variable env) locals1 locals2 &&
+    for_stmt env ~norm fd1.f_body fd2.f_body &&
+      oall2 (for_expr env ~norm) fd1.f_ret fd2.f_ret
+
+  let for_function_body env ~norm fb1 fb2 =
+    match fb1, fb2 with
+    | FBdef fd1, FBdef fd2 ->
+      for_function_def env ~norm fd1 fd2
+
+    | FBalias xp1, FBalias xp2 ->
+      for_xp env ~norm xp1 xp2
+
+    | FBabs _, _ | _, FBabs _ -> assert false
+    | _, _ -> false
+
+  let for_function env ~norm f1 f2 =
+    f1.f_name = f2.f_name &&
+      for_funsig env f1.f_sig f2.f_sig &&
+        for_function_body env ~norm f1.f_def f2.f_def
+
+
+  (* ------------------------------------------------------------------ *)
+
+  let rec for_module_expr env ~norm me1 me2 =
+    me1.me_name = me2.me_name &&
+      for_module_sig env ~norm me1.me_sig me2.me_sig &&
+    let s = add_modules me2.me_sig.mis_params me1.me_sig.mis_params in
+    let comps1 = me1.me_comps in
+    let comps2 = EcSubst.subst_module_comps s me2.me_comps in
+    let body1 = me1.me_body in
+    let body2 = EcSubst.subst_module_body s me2.me_body in
+    for_module_comps env ~norm comps1 comps2 &&
+    for_module_body env ~norm body1 body2
+
+  and for_module_comps env ~norm mc1 mc2 =
+    List.for_all2 (for_module_item env ~norm) mc1 mc2
+
+  and for_module_item env ~norm i1 i2 =
+    match i1, i2 with
+    | MI_Module me1, MI_Module me2 ->
+      for_module_expr env ~norm me1 me2
+
+    | MI_Variable v1, MI_Variable v2 ->
+      for_variable env v1 v2
+
+    | MI_Function f1, MI_Function f2 ->
+      for_function env ~norm f1 f2
+
+    | _, _ -> false
+
+  and for_module_body env ~norm mb1 mb2 =
+    match mb1, mb2 with
+    | ME_Alias(i1,mp1), ME_Alias(i2,mp2) ->
+      i1 = i2 && for_mp env ~norm mp1 mp2
+
+    | ME_Structure {ms_body = mc1}, ME_Structure {ms_body = mc2} ->
+      for_module_comps env ~norm mc1 mc2
+
+    | ME_Decl _, _ | _, ME_Decl _ -> assert false
+    | _, _ -> false
+
   (* ------------------------------------------------------------------ *)
   let for_pv    = fun env ?(norm = true) -> for_pv    env ~norm
   let for_xp    = fun env ?(norm = true) -> for_xp    env ~norm
@@ -233,6 +352,10 @@ module EqTest = struct
   let for_instr = fun env ?(norm = true) -> for_instr env ~norm
   let for_stmt  = fun env ?(norm = true) -> for_stmt  env ~norm
   let for_expr  = fun env ?(norm = true) -> for_expr  env ~norm
+
+  let for_module_sig  = fun env ?(norm = true) -> for_module_sig env ~norm
+  let for_module_expr = fun env ?(norm = true) -> for_module_expr env ~norm
+
 end
 
 (* -------------------------------------------------------------------- *)

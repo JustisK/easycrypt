@@ -600,6 +600,8 @@ let subst_ctheory      s = subst_ctheory (_subst_of_subst s)
 let subst_function     s = subst_function (_subst_of_subst s)
 let subst_module       s = subst_module (_subst_of_subst s)
 let subst_module_comps s = subst_module_comps (_subst_of_subst s)
+let subst_module_body  s = subst_module_body (_subst_of_subst s)
+
 let subst_modtype      s = subst_modtype (_subst_of_subst s)
 let subst_modsig         = fun ?params s x -> snd (subst_modsig ?params (_subst_of_subst s) x)
 let subst_modsig_body  s = subst_modsig_body (_subst_of_subst s)
