@@ -376,9 +376,21 @@ and replay_axd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, ax) =
 and replay_modtype
   (ove : _ ovrenv) (subst, ops, proofs, scope) (x, modty)
 =
-  let subst, x = rename ove subst (`ModType, x) in
-  let modty = EcSubst.subst_modsig subst modty in
-  (subst, ops, proofs, ove.ovre_hooks.hmodty scope (x, modty))
+  match Msym.find_opt x ove.ovre_ovrd.evc_modtypes with
+  | None ->
+      let subst, x = rename ove subst (`ModType, x) in
+      let modty = EcSubst.subst_modsig subst modty in
+      (subst, ops, proofs, ove.ovre_hooks.hmodty scope (x, modty))
+
+  | Some { pl_desc = newname } ->
+      let subst, name = rename ove subst (`Module, x) in
+      let modty = EcSubst.subst_modsig subst modty in
+      let env   = ove.ovre_hooks.henv scope in
+      let newmt = snd (EcEnv.ModTy.lookup newname env) in (* FIXME *)
+
+      if not (EcReduction.EqTest.for_module_sig env modty newmt) then
+        assert false;           (* FIXME *)
+      (subst, ops, proofs, ove.ovre_hooks.hmodty scope (name, newmt))
 
 (* -------------------------------------------------------------------- *)
 and replay_mod

@@ -23,6 +23,7 @@ type ovkind =
 | OVK_Theory
 | OVK_Lemma
 | OVK_ModExpr
+| OVK_ModType
 
 type clone_error =
 | CE_UnkTheory      of qsymbol
@@ -45,6 +46,7 @@ type evclone = {
   evc_ops      : (op_override located) Msym.t;
   evc_preds    : (pr_override located) Msym.t;
   evc_modexprs : (me_override located) Msym.t;
+  evc_modtypes : (mt_override located) Msym.t;
   evc_lemmas   : evlemma;
   evc_ths      : evclone Msym.t;
 }

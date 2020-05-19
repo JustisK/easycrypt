@@ -1028,6 +1028,7 @@ and ty_override = psymbol list * pty * [`Alias | `Inline]
 and op_override = op_override_def * [`Alias | `Inline]
 and pr_override = pr_override_def * [`Alias | `Inline]
 and me_override = symbol list * symbol
+and mt_override = symbol list * symbol
 and th_override = pqsymbol
 
 and op_override_def = {
