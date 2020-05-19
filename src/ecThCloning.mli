@@ -22,6 +22,7 @@ type ovkind =
 | OVK_Predicate
 | OVK_Theory
 | OVK_Lemma
+| OVK_ModExpr
 
 type clone_error =
 | CE_UnkTheory      of qsymbol
@@ -40,11 +41,12 @@ val clone_error : EcEnv.env -> clone_error -> 'a
 
 (* -------------------------------------------------------------------- *)
 type evclone = {
-  evc_types  : (ty_override located) Msym.t;
-  evc_ops    : (op_override located) Msym.t;
-  evc_preds  : (pr_override located) Msym.t;
-  evc_lemmas : evlemma;
-  evc_ths    : evclone Msym.t;
+  evc_types    : (ty_override located) Msym.t;
+  evc_ops      : (op_override located) Msym.t;
+  evc_preds    : (pr_override located) Msym.t;
+  evc_modexprs : (me_override located) Msym.t;
+  evc_lemmas   : evlemma;
+  evc_ths      : evclone Msym.t;
 }
 
 and evlemma = {

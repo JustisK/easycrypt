@@ -28,6 +28,7 @@ type ovkind =
 | OVK_Predicate
 | OVK_Theory
 | OVK_Lemma
+| OVK_ModExpr
 
 type clone_error =
 | CE_UnkTheory      of qsymbol
@@ -55,11 +56,12 @@ type axclone = {
 
 (* ------------------------------------------------------------------ *)
 type evclone = {
-  evc_types  : (ty_override located) Msym.t;
-  evc_ops    : (op_override located) Msym.t;
-  evc_preds  : (pr_override located) Msym.t;
-  evc_lemmas : evlemma;
-  evc_ths    : evclone Msym.t;
+  evc_types    : (ty_override located) Msym.t;
+  evc_ops      : (op_override located) Msym.t;
+  evc_preds    : (pr_override located) Msym.t;
+  evc_modexprs : (me_override located) Msym.t;
+  evc_lemmas   : evlemma;
+  evc_ths      : evclone Msym.t;
 }
 
 and evlemma = {
@@ -72,11 +74,12 @@ and evtags = ([`Include | `Exclude] * symbol) list
 (*-------------------------------------------------------------------- *)
 let evc_empty =
   let evl = { ev_global = []; ev_bynames = Msym.empty; } in
-    { evc_types  = Msym.empty;
-      evc_ops    = Msym.empty;
-      evc_preds  = Msym.empty;
-      evc_lemmas = evl;
-      evc_ths    = Msym.empty; }
+    { evc_types    = Msym.empty;
+      evc_ops      = Msym.empty;
+      evc_preds    = Msym.empty;
+      evc_modexprs = Msym.empty;
+      evc_lemmas   = evl;
+      evc_ths      = Msym.empty; }
 
 let rec evc_update (upt : evclone -> evclone) (nm : symbol list) (evc : evclone) =
   match nm with
@@ -153,6 +156,14 @@ let find_nt cth (nm, x) =
   let test = function
     | CTh_operator (xop, op) when xop = x && EcDecl.is_abbrev op ->
        Some op
+    | _ -> None
+  in find_mc cth.cth_struct nm |> obind (List.opick test)
+
+(* -------------------------------------------------------------------- *)
+let find_modexpr cth (nm, x) =
+  let test = function
+    | CTh_module me when me.me_name = x ->
+       Some me
     | _ -> None
   in find_mc cth.cth_struct nm |> obind (List.opick test)
 
@@ -303,6 +314,29 @@ end = struct
     in (proofs, evc)
 
   (* ------------------------------------------------------------------ *)
+  let modexpr_ovrd ~cancrt oc ((proofs, evc) : state) name (med : me_override) =
+    let { pl_loc = lc; pl_desc = ((nm, x) as name) } = name in
+
+    let () =
+      match find_modexpr oc.oc_oth name with
+      | None ->
+         clone_error oc.oc_env (CE_UnkOverride (OVK_ModExpr, name));
+      | Some _ when not cancrt ->
+         clone_error oc.oc_env (CE_CrtOverride (OVK_ModExpr, name));
+      | _ -> () in
+
+    let evc =
+      evc_update
+        (fun evc ->
+         if Msym.mem x evc.evc_modexprs then
+           clone_error oc.oc_env (CE_DupOverride (OVK_ModExpr, name));
+         { evc with evc_modexprs = Msym.add x (mk_loc lc med) evc.evc_modexprs })
+        nm evc
+
+    in (proofs, evc)
+
+
+  (* ------------------------------------------------------------------ *)
   let th_ovrd ~cancrt oc ((proofs, evc) : state) name (thd : th_override) =
     let { pl_loc = lc; pl_desc = ((nm, x) as name) } = name in
     let (_ : bool) = cancrt in
@@ -388,6 +422,11 @@ end = struct
 
       | CTh_export _ ->
          (proofs, evc)
+
+      | CTh_module m ->
+         modexpr_ovrd ~cancrt:true
+           oc (proofs, evc) (loced (xdth @ prefix, m.me_name))
+           (thd @ prefix, m.me_name)
 
       | _ -> clone_error oc.oc_env (CE_CrtOverride (OVK_Theory, name))
 

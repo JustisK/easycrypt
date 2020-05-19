@@ -384,10 +384,24 @@ and replay_modtype
 and replay_mod
   (ove : _ ovrenv) (subst, ops, proofs, scope) me
 =
-  let subst, name = rename ove subst (`Module, me.me_name) in
-  let me = EcSubst.subst_module subst me in
-  let me = { me with me_name = name } in
-  (subst, ops, proofs, ove.ovre_hooks.hmod scope ove.ovre_local me)
+  match Msym.find_opt me.me_name ove.ovre_ovrd.evc_modexprs with
+  | None ->
+      let subst, name = rename ove subst (`Module, me.me_name) in
+      let me = EcSubst.subst_module subst me in
+      let me = { me with me_name = name } in
+      (subst, ops, proofs, ove.ovre_hooks.hmod scope ove.ovre_local me)
+
+  | Some { pl_desc = newname } ->
+      let subst, name = rename ove subst (`Module, me.me_name) in
+      let me    = EcSubst.subst_module subst me in
+      let me    = { me with me_name = name; } in
+      let env   = ove.ovre_hooks.henv scope in
+      let newme = snd (EcEnv.Mod.lookup newname env) in (* FIXME *)
+      let newme = { newme with me_name = name; } in
+
+      if not (EcReduction.EqTest.for_module_expr env me newme) then
+        assert false;           (* FIXME *)
+      (subst, ops, proofs, ove.ovre_hooks.hmod scope ove.ovre_local newme)
 
 (* -------------------------------------------------------------------- *)
 and replay_export

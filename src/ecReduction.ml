@@ -228,9 +228,7 @@ module EqTest = struct
     | _, _ -> false
 
   (* -------------------------------------------------------------------- *)
-
   let for_funsig env fs1 fs2 =
-    (* Should we test also fs_anames ? *)
     fs1.fs_name = fs2.fs_name &&
       for_type env fs1.fs_arg fs2.fs_arg &&
         for_type env fs1.fs_ret fs2.fs_ret
@@ -240,7 +238,6 @@ module EqTest = struct
       oi1.oi_in = oi2.oi_in
 
   (* -------------------------------------------------------------------- *)
-
   let add_modules p1 p2 : EcSubst.subst =
     List.fold_left2 (fun s (id1,_) (id2,_) ->
         EcSubst.add_module s id1 (EcPath.mident id2)) EcSubst.empty p1 p2
@@ -276,7 +273,6 @@ module EqTest = struct
     for_module_sig_body env ~norm body1 body2
 
   (* ------------------------------------------------------------------ *)
-
   let for_variable env v1 v2 =
     v1.v_name = v2.v_name && for_type env v1.v_type v2.v_type
 
@@ -304,9 +300,7 @@ module EqTest = struct
       for_funsig env f1.f_sig f2.f_sig &&
         for_function_body env ~norm f1.f_def f2.f_def
 
-
   (* ------------------------------------------------------------------ *)
-
   let rec for_module_expr env ~norm me1 me2 =
     me1.me_name = me2.me_name &&
       for_module_sig env ~norm me1.me_sig me2.me_sig &&

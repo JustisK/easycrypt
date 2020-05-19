@@ -547,6 +547,7 @@ end = struct
     | OVK_Predicate -> "predicate"
     | OVK_Theory    -> "theory"
     | OVK_Lemma     -> "lemma/axiom"
+    | OVK_ModExpr   -> "module"
 
   let pp_incompatible env fmt = function
     | NotSameNumberOfTyParam (exp, got) ->
