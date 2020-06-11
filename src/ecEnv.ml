@@ -2948,13 +2948,19 @@ module Theory = struct
       let xpath x = EcPath.pqname path x in
       let rec import_cth_item (env : env) = function
         | CTh_type (x, ty) ->
-            MC.import_tydecl (xpath x) ty env
+            if   ty.tyd_resolve
+            then MC.import_tydecl (xpath x) ty env
+            else env
 
         | CTh_operator (x, op) ->
-            MC.import_operator (xpath x) op env
+            if   op.op_resolve
+            then MC.import_operator (xpath x) op env
+            else env
 
         | CTh_axiom (x, ax) ->
-            MC.import_axiom (xpath x) ax env
+            if   ax.ax_visibility <> `Hidden
+            then MC.import_axiom (xpath x) ax env
+            else env
 
         | CTh_modtype (x, ty) ->
             MC.import_modty (xpath x) ty env
