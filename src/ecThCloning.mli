@@ -53,10 +53,11 @@ type evclone = {
 
 and evlemma = {
   ev_global  : (ptactic_core option * evtags option) list;
-  ev_bynames : (ptactic_core option) Msym.t;
+  ev_bynames : evinfo Msym.t;
 }
 
 and evtags = ([`Include | `Exclude] * symbol) list
+and evinfo = ptactic_core option * bool
 
 val evc_empty : evclone
 

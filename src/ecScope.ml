@@ -308,8 +308,8 @@ and proof_state =
   PSNoCheck | PSCheck of EcCoreGoal.proof
 
 and pucflags = {
-  puc_nosmt : bool;
-  puc_local : bool;
+  puc_visibility : EcDecl.ax_visibility;
+  puc_local      : bool;
 }
 
 (* -------------------------------------------------------------------- *)
@@ -902,14 +902,15 @@ module Ax = struct
         | PAxiom tags -> `Axiom (Ssym.of_list (List.map unloc tags), false)
         | _ -> `Lemma
 
-      in { ax_tparams = tparams;
-           ax_spec    = concl;
-           ax_kind    = kind;
-           ax_nosmt   = ax.pa_nosmt; }
+      in { ax_tparams    = tparams;
+           ax_spec       = concl;
+           ax_kind       = kind;
+           ax_visibility = if ax.pa_nosmt then `NoSmt else `Visible; }
     in
 
     let check    = Check_mode.check scope.sc_options in
-    let pucflags = { puc_nosmt = ax.pa_nosmt; puc_local = ax.pa_local; } in
+    let pucflags = { puc_visibility = if ax.pa_nosmt then `NoSmt else `Visible;
+                     puc_local = ax.pa_local; } in
     let pucflags = (([], None), pucflags) in
 
     if not ax.pa_local then begin
@@ -1080,7 +1081,7 @@ module Ax = struct
       in
         doit [] (fst puc.puc_cont)
     in
-    let pucflags = { puc_nosmt = ax.ax_nosmt; puc_local = false; } in
+    let pucflags = { puc_visibility = ax.ax_visibility; puc_local = false; } in
     let pucflags = ((proofs, snd puc.puc_cont), pucflags) in
     let check    = Check_mode.check scope.sc_options in
 
@@ -1248,10 +1249,10 @@ module Op = struct
                  ax,
                List.combine axpm (List.map snd tparams)) in
           let ax =
-            { ax_tparams = axpm;
-              ax_spec    = ax;
-              ax_kind    = `Axiom (Ssym.empty, false);
-              ax_nosmt   = nosmt; }
+            { ax_tparams    = axpm;
+              ax_spec       = ax;
+              ax_kind       = `Axiom (Ssym.empty, false);
+              ax_visibility = if nosmt then `NoSmt else `Visible; }
           in Ax.bind scope false (unloc rname, ax))
         scope refts
     in
@@ -1300,10 +1301,10 @@ module Op = struct
       let ax  = EcFol.f_forall (List.map (snd_map gtty) bds) ax in
 
       let ax =
-        { ax_tparams = List.map (fun ty -> (ty, Sp.empty)) nparams;
-          ax_spec    = ax;
-          ax_kind    = `Axiom (Ssym.empty, false);
-          ax_nosmt   = false; } in
+        { ax_tparams    = List.map (fun ty -> (ty, Sp.empty)) nparams;
+          ax_spec       = ax;
+          ax_kind       = `Axiom (Ssym.empty, false);
+          ax_visibility = `Visible; } in
 
       let scope, axname =
         let axname = Printf.sprintf "%s_%s" (unloc op.po_name) suffix in
@@ -1518,8 +1519,9 @@ module Ty = struct
     in
     let ue = TT.transtyvars scope.sc_env (loc, Some args) in
     let tydecl = {
-      tyd_params = EcUnify.UniEnv.tparams ue;
-      tyd_type   = `Abstract (Sp.of_list tcs);
+      tyd_params  = EcUnify.UniEnv.tparams ue;
+      tyd_type    = `Abstract (Sp.of_list tcs);
+      tyd_resolve = true;
     } in
       bind scope (unloc name, tydecl)
 
@@ -1530,8 +1532,9 @@ module Ty = struct
     let ue     = TT.transtyvars scope.sc_env (loc, Some args) in
     let body   = transty tp_tydecl scope.sc_env ue body in
     let tydecl = {
-      tyd_params = EcUnify.UniEnv.tparams ue;
-      tyd_type   = `Concrete body;
+      tyd_params  = EcUnify.UniEnv.tparams ue;
+      tyd_type    = `Concrete body;
+      tyd_resolve = true;
     } in
       bind scope (unloc name, tydecl)
 
@@ -1563,7 +1566,7 @@ module Ty = struct
 
       let asty  =
         let body = ofold (fun p tc -> Sp.add p tc) Sp.empty uptc in
-          { tyd_params = []; tyd_type = `Abstract body; } in
+          { tyd_params = []; tyd_type = `Abstract body; tyd_resolve = true; } in
       let scenv = EcEnv.Ty.bind name asty scenv in
 
       (* Check for duplicated field names *)
@@ -1675,10 +1678,10 @@ module Ty = struct
         (fun (x, req) ->
            if not (Mstr.mem x symbs) then
              let ax = {
-               ax_tparams = [];
-               ax_spec    = req;
-               ax_kind    = `Lemma;
-               ax_nosmt   = true;
+               ax_tparams    = [];
+               ax_spec       = req;
+               ax_kind       = `Lemma;
+               ax_visibility = `NoSmt;
              } in Some ((None, ax), EcPath.psymbol x, scope.sc_env)
            else None)
         reqs in
@@ -1688,12 +1691,12 @@ module Ty = struct
           let t  = { pt_core = pt; pt_intros = []; } in
           let t  = { pl_loc = pt.pl_loc; pl_desc = Pby (Some [t]) } in
           let t  = { pt_core = t; pt_intros = []; } in
-          let ax = { ax_tparams = [];
-                     ax_spec    = f;
-                     ax_kind    = `Axiom (Ssym.empty, false);
-                     ax_nosmt   = true; } in
+          let ax = { ax_tparams    = [];
+                     ax_spec       = f;
+                     ax_kind       = `Axiom (Ssym.empty, false);
+                     ax_visibility = `NoSmt; } in
 
-          let pucflags = { puc_nosmt = false; puc_local = false; } in
+          let pucflags = { puc_visibility = `Visible; puc_local = false; } in
           let pucflags = (([], None), pucflags) in
           let check    = Check_mode.check scope.sc_options in
 
@@ -1877,7 +1880,8 @@ module Ty = struct
       tyd_params = datatype.ELI.dt_tparams;
       tyd_type   = `Datatype { tydt_ctors   = ctors ;
                                tydt_schcase = casesc;
-                               tydt_schelim = indsc ; }; }
+                               tydt_schelim = indsc ; };
+      tyd_resolve = true; }
 
     in bind scope (unloc name, tydecl)
 
@@ -1892,8 +1896,10 @@ module Ty = struct
 
     (* Add final record to environment *)
     let tydecl  = {
-      tyd_params = record.ELI.rc_tparams;
-      tyd_type   = `Record (scheme, record.ELI.rc_fields); }
+      tyd_params  = record.ELI.rc_tparams;
+      tyd_type    = `Record (scheme, record.ELI.rc_fields);
+      tyd_resolve = true;
+    }
 
     in bind scope (unloc name, tydecl)
 end
@@ -2328,7 +2334,7 @@ module Cloning = struct
           let t = { pt_core = t; pt_intros = []; } in
           let (x, ax) = axc.C.axc_axiom in
 
-          let pucflags = { puc_nosmt = false; puc_local = false; } in
+          let pucflags = { puc_visibility = `Visible; puc_local = false; } in
           let pucflags = (([], None), pucflags) in
           let check    = Check_mode.check scope.sc_options in
 

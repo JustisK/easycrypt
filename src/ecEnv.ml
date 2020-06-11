@@ -706,10 +706,10 @@ module MC = struct
       let axp  = EcPath.prefix (Lazy.force mypath) in
       let axp  = IPPath (EcPath.pqoname axp name) in
       let ax   =
-        { ax_kind    = `Axiom (Ssym.empty, false);
-          ax_tparams = tv;
-          ax_spec    = cl;
-          ax_nosmt   = false; } in
+        { ax_kind       = `Axiom (Ssym.empty, false);
+          ax_tparams    = tv;
+          ax_spec       = cl;
+          ax_visibility = `Visible; } in
       (name, (axp, ax))) ax in
 
     List.fold_left (fun mc -> curry (_up_axiom candup mc)) mc ax
@@ -753,10 +753,10 @@ module MC = struct
           let (schelim, schcase) =
             let do1 scheme name =
               let scname = Printf.sprintf "%s_%s" x name in
-                (scname, { ax_tparams = tyd.tyd_params;
-                           ax_spec    = scheme;
-                           ax_kind    = `Axiom (Ssym.empty, false);
-                           ax_nosmt   = true; })
+                (scname, { ax_tparams    = tyd.tyd_params;
+                           ax_spec       = scheme;
+                           ax_kind       = `Axiom (Ssym.empty, false);
+                           ax_visibility = `NoSmt; })
             in
               (do1 schelim "ind", do1 schcase "case")
           in
@@ -788,10 +788,10 @@ module MC = struct
 
           let scheme =
             let scname = Printf.sprintf "%s_ind" x in
-              (scname, { ax_tparams = tyd.tyd_params;
-                         ax_spec    = scheme;
-                         ax_kind    = `Axiom (Ssym.empty, false);
-                         ax_nosmt   = true; })
+              (scname, { ax_tparams    = tyd.tyd_params;
+                         ax_spec       = scheme;
+                         ax_kind       = `Axiom (Ssym.empty, false);
+                         ax_visibility = `NoSmt; })
           in
 
           let stname = Printf.sprintf "mk_%s" x in
@@ -873,10 +873,10 @@ module MC = struct
         List.map
           (fun (x, ax) ->
             let ax = Fsubst.f_subst fsubst ax in
-              (x, { ax_tparams = [(self, Sp.singleton mypath)];
-                    ax_spec    = ax;
-                    ax_kind    = `Axiom (Ssym.empty, false);
-                    ax_nosmt   = true; }))
+              (x, { ax_tparams    = [(self, Sp.singleton mypath)];
+                    ax_spec       = ax;
+                    ax_kind       = `Axiom (Ssym.empty, false);
+                    ax_visibility = `NoSmt; }))
           tc.tc_axs
       in
 
@@ -2591,11 +2591,10 @@ module Op = struct
   let rebind name op env =
     MC.bind_operator name op env
 
-  let all ?check (qname : qsymbol) (env : env) =
+  let all ?(hidden = false) ?(check = fun _ -> true) (qname : qsymbol) (env : env) =
     let ops = MC.lookup_operators qname env in
-    match check with
-    | None -> ops
-    | Some check -> List.filter (check |- snd) ops
+    let check (_, op) = (hidden || op.op_resolve) && check op in
+    List.filter check ops
 
   let reducible env p =
     try

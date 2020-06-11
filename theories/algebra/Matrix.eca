@@ -7,14 +7,11 @@ import StdOrder.IntOrder StdBigop.Bigreal.
 pragma -oldip.
 
 (* -------------------------------------------------------------------- *)
-type R.
-
-clone import Ring.IDomain as ZR with type t <- R.
-clear [ZR.* ZR.AddMonoid.* ZR.MulMonoid.*].
+clone import Ring.IDomain as ZR.
 
 (* -------------------------------------------------------------------- *)
 clone import Bigalg.BigComRing as Big with
-  type t <- R,
+  type CR.t      <- ZR.t,
   pred CR.unit   <- ZR.unit,
     op CR.zeror  <- ZR.zeror,
     op CR.oner   <- ZR.oner,
@@ -25,6 +22,8 @@ clone import Bigalg.BigComRing as Big with
     op CR.intmul <- ZR.intmul,
     op CR.ofint  <- ZR.ofint,
     op CR.exp    <- ZR.exp.
+
+type R = t.
 
 import BAdd.
 

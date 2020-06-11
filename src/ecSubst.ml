@@ -324,7 +324,7 @@ let subst_tydecl (s : _subst) (tyd : tydecl) =
         `Record (Fsubst.f_subst (f_subst_of_subst sty) scheme,
                  List.map (snd_map sty.s_ty) fields)
   in
-    { tyd_params = params'; tyd_type = body; }
+    { tyd_params = params'; tyd_type = body; tyd_resolve = tyd.tyd_resolve; }
 
 (* -------------------------------------------------------------------- *)
 let rec subst_op_kind (s : _subst) (kind : operator_kind) =
@@ -412,9 +412,10 @@ let subst_op (s : _subst) (op : operator) =
   let sty     = init_tparams s op.op_tparams tparams in
   let ty      = sty.s_ty op.op_ty in
   let kind    = subst_op_kind sty op.op_kind in
-    { op_tparams = tparams;
-      op_ty      = ty     ;
-      op_kind    = kind   ; }
+    { op_tparams = tparams      ;
+      op_ty      = ty           ;
+      op_kind    = kind         ;
+      op_resolve = op.op_resolve; }
 
 (* -------------------------------------------------------------------- *)
 let subst_ax (s : _subst) (ax : axiom) =
@@ -422,10 +423,10 @@ let subst_ax (s : _subst) (ax : axiom) =
   let s      = init_tparams s ax.ax_tparams params in
   let spec   = Fsubst.f_subst (f_subst_of_subst s) ax.ax_spec in
 
-  { ax_tparams = params;
-    ax_spec    = spec;
-    ax_kind    = ax.ax_kind;
-    ax_nosmt   = ax.ax_nosmt; }
+  { ax_tparams    = params;
+    ax_spec       = spec;
+    ax_kind       = ax.ax_kind;
+    ax_visibility = ax.ax_visibility; }
 
 (* -------------------------------------------------------------------- *)
 let subst_ring (s : _subst) cr =

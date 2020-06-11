@@ -151,36 +151,54 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
       let subst, x = rename ove subst (`Type, x) in
       (subst, ops, proofs, ove.ovre_hooks.hty scope (x, otyd))
 
-  | Some { pl_desc = (nargs, ntyd, mode) } -> begin
-      let nargs = List.map2
-                    (fun (_, tc) x -> (EcIdent.create (unloc x), tc))
-                    otyd.tyd_params nargs in
-      let ue    = EcUnify.UniEnv.create (Some nargs) in
-      let ntyd  = EcTyping.transty EcTyping.tp_tydecl scenv ue ntyd in
+  | Some { pl_desc = (tydov, mode) } -> begin
+      let newtyd, body =
+        match tydov with
+        | `BySyntax (nargs, ntyd) ->
+            let nargs = List.map2
+                          (fun (_, tc) x -> (EcIdent.create (unloc x), tc))
+                          otyd.tyd_params nargs in
+            let ue    = EcUnify.UniEnv.create (Some nargs) in
+            let ntyd  = EcTyping.transty EcTyping.tp_tydecl scenv ue ntyd in
+            let decl  =
+              { tyd_params  = nargs;
+                tyd_type    = `Concrete ntyd;
+                tyd_resolve = otyd.tyd_resolve && (mode = `Alias); }
+
+            in (decl, ntyd)
+
+        | `ByPath p -> begin
+            match EcEnv.Ty.by_path_opt p scenv with
+            | Some reftyd ->
+                let tyargs = List.map (fun (x, _) -> EcTypes.tvar x) reftyd.tyd_params in
+                let body   = tconstr p tyargs in
+                let decl   =
+                  { reftyd with
+                      tyd_type    = `Concrete body;
+                      tyd_resolve =otyd.tyd_resolve && (mode = `Alias); } in
+                (decl, body)
+
+            | _ -> assert false
+          end
+      in
 
       match mode with
       | `Alias ->
-          let binding =
-            { tyd_params = nargs;
-              tyd_type   = `Concrete ntyd; } in
           let subst, x = rename ove subst (`Type, x) in
-          (subst, ops, proofs, ove.ovre_hooks.hty scope (x, binding))
+          (subst, ops, proofs, ove.ovre_hooks.hty scope (x, newtyd))
 
       | `Inline ->
           let subst =
             EcSubst.add_tydef
-              subst (xpath ove x) (List.map fst nargs, ntyd) in
+              subst (xpath ove x) (List.map fst newtyd.tyd_params, body) in
 
           let subst =
             (* FIXME: HACK *)
-            match otyd.tyd_type, ntyd.ty_node with
+            match otyd.tyd_type, body.ty_node with
             | `Datatype { tydt_ctors = octors }, Tconstr (np, _) -> begin
                 match (EcEnv.Ty.by_path np scenv).tyd_type with
                 | `Datatype { tydt_ctors = _ } ->
                     List.fold_left (fun subst (name, _) ->
-                      Printf.printf "%s / %s\n%!"
-                        (EcPath.tostring (xpath ove name))
-                        (EcPath.tostring (EcPath.pqoname (EcPath.prefix np) name));
                       EcSubst.add_path subst
                         ~src:(xpath ove name)
                         ~dst:(EcPath.pqoname (EcPath.prefix np) name))
@@ -189,7 +207,7 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
               end
             | _, _ -> subst
 
-          in (subst, ops, proofs, scope)
+          in (subst, ops, proofs, ove.ovre_hooks.hty scope (x, newtyd))
   end
 
 (* -------------------------------------------------------------------- *)
@@ -203,7 +221,10 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
       (subst, ops, proofs, ove.ovre_hooks.hop scope (x, oopd))
 
   | Some { pl_desc = (opov, opmode); pl_loc = loc; } ->
-      let nosmt = opov.opov_nosmt in
+      let nosmt =
+        match opov with
+        | `BySyntax opov -> opov.opov_nosmt
+        | `ByPath   _    -> false in
 
       if nosmt && opmode = `Inline then
           ove.ovre_hooks.herr ~loc
@@ -215,41 +236,63 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
       in
 
       let (newop, subst, x, alias) =
-        let tp = opov.opov_tyvars |> omap (List.map (fun tv -> (tv, []))) in
-        let ue = EcTyping.transtyvars scenv (loc, tp) in
-        let tp = EcTyping.tp_relax in
-        let (ty, body) =
-          let env     = scenv in
-          let codom   = EcTyping.transty tp env ue opov.opov_retty in
-          let env, xs = EcTyping.trans_binding env ue opov.opov_args in
-          let body    = EcTyping.transexpcast env `InOp ue codom opov.opov_body in
-          let lam     = EcTypes.e_lam xs body in
-          (lam.EcTypes.e_ty, lam)
+        let newop, body =
+          match opov with
+          | `BySyntax opov ->
+              let tp = opov.opov_tyvars |> omap (List.map (fun tv -> (tv, []))) in
+              let ue = EcTyping.transtyvars scenv (loc, tp) in
+              let tp = EcTyping.tp_relax in
+              let (ty, body) =
+                let env     = scenv in
+                let codom   = EcTyping.transty tp env ue opov.opov_retty in
+                let env, xs = EcTyping.trans_binding env ue opov.opov_args in
+                let body    = EcTyping.transexpcast env `InOp ue codom opov.opov_body in
+                let lam     = EcTypes.e_lam xs body in
+                (lam.EcTypes.e_ty, lam)
+              in
+              begin
+                try ty_compatible scenv ue
+                    (List.map fst reftyvars, refty)
+                    (List.map fst (EcUnify.UniEnv.tparams ue), ty)
+                with Incompatible err ->
+                  clone_error scenv (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
+              end;
+
+              if not (EcUnify.UniEnv.closed ue) then
+                ove.ovre_hooks.herr
+                  ~loc "this operator body contains free type variables";
+
+              let uni     = EcTypes.Tuni.offun (EcUnify.UniEnv.close ue) in
+              let body    = body |> EcTypes.e_mapty uni in
+              let ty      = uni ty in
+              let tparams = EcUnify.UniEnv.tparams ue in
+              let newop   =
+                mk_op ~resolve:(oopd.op_resolve && opmode = `Alias)
+                  tparams ty (Some (OP_Plain (body, nosmt)))
+              in (newop, body)
+
+          | `ByPath p -> begin
+            match EcEnv.Op.by_path_opt p scenv with
+            | Some ({ op_kind = OB_oper _ } as refop) ->
+                let tyargs = List.map (fun (x, _) -> EcTypes.tvar x) refop.op_tparams in
+                let body   = EcTypes.e_op p tyargs refop.op_ty in
+                let decl   =
+                  { refop with
+                      op_kind = OB_oper (Some (OP_Plain (body, nosmt)));
+                      op_resolve = oopd.op_resolve && opmode = `Alias; } in
+                (decl, body)
+
+            | _ -> assert false
+          end
         in
-        begin
-          try ty_compatible scenv ue
-              (List.map fst reftyvars, refty)
-              (List.map fst (EcUnify.UniEnv.tparams ue), ty)
-          with Incompatible err ->
-            clone_error scenv (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
-        end;
 
-        if not (EcUnify.UniEnv.closed ue) then
-          ove.ovre_hooks.herr
-            ~loc "this operator body contains free type variables";
-
-        let uni     = EcTypes.Tuni.offun (EcUnify.UniEnv.close ue) in
-        let body    = body |> EcTypes.e_mapty uni in
-        let ty      = uni ty in
-        let tparams = EcUnify.UniEnv.tparams ue in
-        let newop   = mk_op tparams ty (Some (OP_Plain (body, nosmt))) in
           match opmode with
           | `Alias ->
               let subst, x = rename ove subst (`Op, x) in
               (newop, subst, x, true)
 
           | `Inline ->
-              let subst1 = (List.map fst tparams, body) in
+              let subst1 = (List.map fst newop.op_tparams, body) in
               let subst  = EcSubst.add_opdef subst (xpath ove x) subst1
               in  (newop, subst, x, false)
       in
@@ -258,7 +301,7 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
         let opp = EcPath.fromqsymbol (snd ove.ovre_prefix, x) in
         Mp.add opp (newop, alias) ops in
       let scope =
-        if alias then ove.ovre_hooks.hop scope (x, newop) else scope
+        (*if alias then*) ove.ovre_hooks.hop scope (x, newop) (*else scope*)
 
       in (subst, ops, proofs, scope)
 
@@ -279,38 +322,56 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
       in
 
       let (newpr, subst, x, alias) =
-         let tp = prov.prov_tyvars |> omap (List.map (fun tv -> (tv, []))) in
-         let ue = EcTyping.transtyvars scenv (loc, tp) in
-         let body =
-           let env     = scenv in
-           let env, xs = EcTyping.trans_binding env ue prov.prov_args in
-           let body    = EcTyping.trans_form_opt env ue prov.prov_body None in
-           let xs      = List.map (fun (x, ty) -> x, EcFol.GTty ty) xs in
-           let lam     = EcFol.f_lambda xs body in
-           lam
-         in
+        let newpr, body =
+          match prov with
+          | `BySyntax prov ->
+              let tp = prov.prov_tyvars |> omap (List.map (fun tv -> (tv, []))) in
+              let ue = EcTyping.transtyvars scenv (loc, tp) in
+              let body =
+                let env     = scenv in
+                let env, xs = EcTyping.trans_binding env ue prov.prov_args in
+                let body    = EcTyping.trans_form_opt env ue prov.prov_body None in
+                let xs      = List.map (fun (x, ty) -> x, EcFol.GTty ty) xs in
+                let lam     = EcFol.f_lambda xs body in
+                lam
+              in
 
-         begin
-           try
-             ty_compatible scenv ue
-               (List.map fst reftyvars, refty)
-               (List.map fst (EcUnify.UniEnv.tparams ue), body.EcFol.f_ty)
-           with Incompatible err ->
-             clone_error scenv
-               (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
-         end;
+              begin
+                try
+                  ty_compatible scenv ue
+                    (List.map fst reftyvars, refty)
+                    (List.map fst (EcUnify.UniEnv.tparams ue), body.EcFol.f_ty)
+                with Incompatible err ->
+                  clone_error scenv
+                    (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
+              end;
 
-         if not (EcUnify.UniEnv.closed ue) then
-           ove.ovre_hooks.herr
-             ~loc "this predicate body contains free type variables";
+              if not (EcUnify.UniEnv.closed ue) then
+                ove.ovre_hooks.herr
+                  ~loc "this predicate body contains free type variables";
 
-         let uni     = EcUnify.UniEnv.close ue in
-         let body    = EcFol.Fsubst.uni uni body in
-         let tparams = EcUnify.UniEnv.tparams ue in
-         let newpr   =
-           { op_tparams = tparams;
-             op_ty      = body.EcFol.f_ty;
-             op_kind    = OB_pred (Some (PR_Plain body)); } in
+              let uni     = EcUnify.UniEnv.close ue in
+              let body    = EcFol.Fsubst.uni uni body in
+              let tparams = EcUnify.UniEnv.tparams ue in
+              let newpr   =
+                { op_tparams = tparams;
+                  op_ty      = body.EcFol.f_ty;
+                  op_kind    = OB_pred (Some (PR_Plain body));
+                  op_resolve = oopr.op_resolve && (prmode = `Alias); } in
+              (newpr, body)
+
+          | `ByPath p -> begin
+            match EcEnv.Op.by_path_opt p scenv with
+            | Some ({ op_kind = OB_pred _ } as refop) ->
+                let tyargs = List.map (fun (x, _) -> EcTypes.tvar x) refop.op_tparams in
+                let body   = EcFol.f_op p tyargs refop.op_ty in
+                { refop with
+                    op_kind    = OB_pred (Some (PR_Plain body));
+                    op_resolve = oopr.op_resolve && (prmode = `Alias); }, body
+
+            | _ -> assert false
+          end
+        in
 
           match prmode with
           | `Alias ->
@@ -318,14 +379,14 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
             (newpr, subst, x, true)
 
           | `Inline ->
-              let subst1 = (List.map fst tparams, body) in
+              let subst1 = (List.map fst newpr.op_tparams, body) in
               let subst  = EcSubst.add_pddef subst (xpath ove x) subst1
               in (newpr, subst, x, false)
 
       in
 
       let scope =
-        if alias then ove.ovre_hooks.hop scope (x, newpr) else scope
+        (*if alias then*) ove.ovre_hooks.hop scope (x, newpr) (*else scope*)
       in (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
@@ -346,25 +407,30 @@ and replay_axd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, ax) =
   let (ax, proofs, axclear) =
     if ove.ovre_abstract then (ax, proofs, false) else
 
-    let doproof =
+    let axclear, tags =
       match ax.ax_kind with
-      | `Lemma -> None
-      | `Axiom (tags, axclear) -> begin
-          match Msym.find_opt x (ove.ovre_ovrd.evc_lemmas.ev_bynames) with
-          | Some pt -> Some (pt, axclear)
-          | None ->
-              List.Exceptionless.find_map
-                (function (pt, None) -> Some (pt, axclear) | (pt, Some pttags) ->
-                   if check_evtags pttags (Ssym.elements tags) then
-                     Some (pt, axclear)
-                   else None)
-                ove.ovre_glproof
-      end
+        | `Lemma -> (false, Ssym.empty)
+        | `Axiom (tags, axc) -> (axc, tags) in
+
+    let doproof =
+      match Msym.find_opt x (ove.ovre_ovrd.evc_lemmas.ev_bynames) with
+      | Some (pt, hide) -> Some (pt, hide)
+      | None when is_axiom ax.ax_kind ->
+          List.Exceptionless.find_map
+            (function (pt, None) -> Some (pt, false) | (pt, Some pttags) ->
+               if check_evtags pttags (Ssym.elements tags) then
+                 Some (pt, false)
+               else None)
+            ove.ovre_glproof
+      | _ -> None
     in
       match doproof with
       | None -> (ax, proofs, false)
-      | Some (pt, axclear)  ->
-          let ax  = { ax with ax_kind = `Lemma } in
+      | Some (pt, hide)  ->
+          let ax  = { ax with
+            ax_kind = `Lemma;
+            ax_visibility = if hide then `Hidden else ax.ax_visibility
+          } in
           let axc = { axc_axiom = (x, ax);
                       axc_path  = EcPath.fromqsymbol (snd ove.ovre_prefix, x);
                       axc_tac   = pt;

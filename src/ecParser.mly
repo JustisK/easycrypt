@@ -3357,7 +3357,7 @@ clone_lemma_base:
 clone_lemma_1_core:
 | l=genqident(clone_lemma_base) {
     match unloc l with
-    | (xs, `Named x ) -> `Named (mk_loc l.pl_loc (xs, x))
+    | (xs, `Named x ) -> `Named (mk_loc l.pl_loc (xs, x), false)
     | (xs, `All tags) -> begin
       match List.rev xs with
       | []      -> `All (None, tags)
@@ -3412,10 +3412,10 @@ cltyparams:
 
 clone_override:
 | TYPE ps=cltyparams x=qident EQ t=loc(type_exp)
-   { (x, PTHO_Type (ps, t, `Alias)) }
+   { (x, PTHO_Type (`BySyntax (ps, t), `Alias)) }
 
 | TYPE ps=cltyparams x=qident LARROW t=loc(type_exp)
-   { (x, PTHO_Type (ps, t, `Inline)) }
+   { (x, PTHO_Type (`BySyntax (ps, t), `Inline)) }
 
 | OP st=nosmt x=qoident tyvars=bracket(tident*)? COLON sty=loc(type_exp) mode=opclmode e=expr
    { let ov = {
@@ -3425,7 +3425,7 @@ clone_override:
        opov_retty  = sty;
        opov_body   = e;
      } in
-       (x, PTHO_Op (ov, mode)) }
+       (x, PTHO_Op (`BySyntax ov, mode)) }
 
 | OP st=nosmt x=qoident tyvars=bracket(tident*)? mode=loc(opclmode) e=expr
    { let ov = {
@@ -3435,7 +3435,7 @@ clone_override:
        opov_retty  = mk_loc mode.pl_loc PTunivar;
        opov_body   = e;
      } in
-       (x, PTHO_Op (ov, unloc mode)) }
+       (x, PTHO_Op (`BySyntax ov, unloc mode)) }
 
 | OP st=nosmt x=qoident tyvars=bracket(tident*)? p=ptybindings mode=loc(opclmode) e=expr
    { let ov = {
@@ -3445,7 +3445,7 @@ clone_override:
        opov_retty  = mk_loc mode.pl_loc PTunivar;
        opov_body   = e;
      } in
-       (x, PTHO_Op (ov, unloc mode)) }
+       (x, PTHO_Op (`BySyntax ov, unloc mode)) }
 
 | PRED x=qoident tyvars=bracket(tident*)? p=ptybindings mode=loc(opclmode) f=form
    { let ov = {
@@ -3453,7 +3453,7 @@ clone_override:
        prov_args   = p;
        prov_body   = f;
      } in
-       (x, PTHO_Pred (ov, unloc mode)) }
+       (x, PTHO_Pred (`BySyntax ov, unloc mode)) }
 
 | PRED x=qoident tyvars=bracket(tident*)? mode=loc(opclmode) f=form
    { let ov = {
@@ -3461,7 +3461,7 @@ clone_override:
        prov_args   = [];
        prov_body   = f;
      } in
-       (x, PTHO_Pred (ov, unloc mode)) }
+       (x, PTHO_Pred (`BySyntax ov, unloc mode)) }
 
 | THEORY x=uqident LARROW y=uqident
    { (x, PTHO_Theory y) }

@@ -68,10 +68,11 @@ type evclone = {
 
 and evlemma = {
   ev_global  : (ptactic_core option * evtags option) list;
-  ev_bynames : (ptactic_core option) Msym.t;
+  ev_bynames : evinfo Msym.t;
 }
 
 and evtags = ([`Include | `Exclude] * symbol) list
+and evinfo = ptactic_core option * bool
 
 (*-------------------------------------------------------------------- *)
 let evc_empty =
@@ -254,17 +255,21 @@ end = struct
 
   (* ------------------------------------------------------------------ *)
   let ty_ovrd ~cancrt oc ((proofs, evc) : state) name (tyd : ty_override) =
-    let (tyargs, _, _) = tyd in
+    let ntyargs =
+      match fst tyd with
+      | `BySyntax (tyargs, _) -> List.length tyargs
+      | `ByPath p -> List.length (EcEnv.Ty.by_path p oc.oc_env).tyd_params in
+
     let { pl_loc = lc; pl_desc = ((nm, x) as name) } = name in
 
     let () =
       match find_type oc.oc_oth name with
       | None ->
          clone_error oc.oc_env (CE_UnkOverride (OVK_Type, name));
-      | Some { EcDecl.tyd_type = `Concrete _ } when not cancrt ->
-         clone_error oc.oc_env (CE_CrtOverride (OVK_Type, name))
+(*      | Some { EcDecl.tyd_type = `Concrete _ } when not cancrt ->
+         clone_error oc.oc_env (CE_CrtOverride (OVK_Type, name))*)
       | Some refty ->
-         if List.length refty.tyd_params <> List.length tyargs then
+         if List.length refty.tyd_params <> ntyargs then
            clone_error oc.oc_env (CE_TypeArgMism (OVK_Type, name)) in
 
     let evc =
@@ -311,7 +316,7 @@ end = struct
       | Some { op_kind = OB_oper _ } ->
          clone_error oc.oc_env (CE_UnkOverride (OVK_Predicate, name));
       | Some { op_kind = OB_pred (Some _) } when not cancrt ->
-         clone_error oc.oc_env (CE_CrtOverride (OVK_Predicate, name));
+          ()
       | _ -> () in
 
     let evc =
@@ -388,67 +393,39 @@ end = struct
       | Some (sp, _) -> sp
     in
 
-    let thd = let thd = EcPath.toqsymbol sp in (fst thd @ [snd thd]) in
+    let thd  = let thd = EcPath.toqsymbol sp in (fst thd @ [snd thd]) in
     let xdth = nm @ [x] in
 
     let rec doit prefix (proofs, evc) dth =
       match dth with
       | CTh_type (x, otyd) ->
-         let params = List.map (EcIdent.name |- fst) otyd.tyd_params in
-         let params = List.map (mk_loc lc) params in
-         let tyd    =
-           match List.map (fun a -> loced (PTvar a)) params with
-           | [] -> PTnamed (loced (thd @ prefix, x))
-           | pt -> PTapp   (loced (thd @ prefix, x), pt)
-         in
-         let ovrd = (params, loced tyd, `Inline) in
+         let ovrd = `ByPath (EcPath.fromqsymbol (thd @ prefix, x)) in
+         let ovrd = (ovrd, `Inline) in
          ty_ovrd ~cancrt:true oc (proofs, evc) (loced (xdth @ prefix, x)) ovrd
 
-      | CTh_operator (x, ({ op_kind = OB_oper _ } as oopd)) ->
-         let params = List.map (EcIdent.name |- fst) oopd.op_tparams in
-         let params = List.map (mk_loc lc) params in
-         let ovrd   = {
-             opov_nosmt = false;  (* because inline mode *)
-             opov_tyvars = Some params;
-             opov_args   = [];
-             opov_retty  = loced PTunivar;
-             opov_body   =
-               let sym = loced (thd @ prefix, x) in
-               let tya = List.map (fun a -> loced (PTvar a)) params in
-               loced (PEident (sym, Some (loced (TVIunamed tya))));
-           } in
+      | CTh_operator (x, ({ op_kind = OB_oper _ })) ->
+         let ovrd = `ByPath (EcPath.fromqsymbol (thd @ prefix, x)) in
          let ovrd = (ovrd, `Inline) in
          op_ovrd ~cancrt:true oc (proofs, evc) (loced (xdth @ prefix, x)) ovrd
 
-      | CTh_operator (x, ({ op_kind = OB_pred _ } as oprd)) ->
-         let params = List.map (EcIdent.name |- fst) oprd.op_tparams in
-         let params = List.map (mk_loc lc) params in
-         let ovrd   = {
-             prov_tyvars = Some params;
-             prov_args   = [];
-             prov_body   =
-               let sym = loced (thd @ prefix, x) in
-               let tya = List.map (fun a -> loced (PTvar a)) params in
-               loced (PFident (sym, Some (loced (TVIunamed tya))));
-           } in
+      | CTh_operator (x, ({ op_kind = OB_pred _ })) ->
+         let ovrd = `ByPath (EcPath.fromqsymbol (thd @ prefix, x)) in
          let ovrd = (ovrd, `Inline) in
          pr_ovrd ~cancrt:true oc (proofs, evc) (loced (xdth @ prefix, x)) ovrd
 
       | CTh_axiom (x, ax) ->
-         if is_axiom ax.ax_kind then
-           let params = List.map (EcIdent.name |- fst) ax.ax_tparams in
-           let params = List.map (mk_loc lc) params in
-           let params = List.map (fun a -> loced (PTvar a)) params in
+         let params = List.map (EcIdent.name |- fst) ax.ax_tparams in
+         let params = List.map (mk_loc lc) params in
+         let params = List.map (fun a -> loced (PTvar a)) params in
 
-           let tc = FPNamed (loced (thd @ prefix, x),
-                             Some (loced (TVIunamed params))) in
-           let tc = { fp_mode = `Explicit; fp_head = tc; fp_args = []; } in
-           let tc = Papply (`Apply ([tc], `Exact), None) in
-           let tc = loced (Plogic tc) in
-           let pr = { pthp_mode   = `Named (loced (xdth @ prefix, x));
-                      pthp_tactic = Some tc }
-           in (pr :: proofs, evc)
-         else (proofs, evc)
+         let tc = FPNamed (loced (thd @ prefix, x),
+                           Some (loced (TVIunamed params))) in
+         let tc = { fp_mode = `Explicit; fp_head = tc; fp_args = []; } in
+         let tc = Papply (`Apply ([tc], `Exact), None) in
+         let tc = loced (Plogic tc) in
+         let pr = { pthp_mode   = `Named (loced (xdth @ prefix, x), true);
+                    pthp_tactic = Some tc; } in
+         (pr :: proofs, evc)
 
       | CTh_theory (x, (dth, `Concrete)) ->
          List.fold_left (doit (prefix @ [x])) (proofs, evc) dth.cth_struct
@@ -466,7 +443,19 @@ end = struct
            oc (proofs, evc) (loced (xdth @ prefix, x))
            (thd @ prefix, x)
 
-      | _ -> clone_error oc.oc_env (CE_CrtOverride (OVK_Theory, name))
+      | CTh_operator (_, {op_kind=OB_nott _; _ }) ->
+          (proofs, evc)
+
+      | CTh_theory (_, (_, `Abstract)) ->
+          (proofs, evc)
+
+      | CTh_instance (_, _) -> (proofs, evc)
+      | CTh_typeclass _     -> (proofs, evc)
+
+      | CTh_baserw _     -> (proofs, evc)
+      | CTh_addrw  _     -> (proofs, evc)
+      | CTh_reduction _  -> (proofs, evc)
+      | CTh_auto _       -> (proofs, evc)
 
     in List.fold_left (doit []) (proofs, evc) dth.cth_struct
 
@@ -557,19 +546,19 @@ end = struct
     | None ->
         clone_error oc.oc_env (CE_UnkOverride (OVK_Lemma, name))
 
-    | Some ax ->
+    | Some _ ->
+(*
         if not (is_axiom ax.ax_kind) then
           clone_error oc.oc_env (CE_CrtOverride (OVK_Lemma, name));
+*)
 
         let update1 evc =
-          match Msym.find_opt (snd name) evc.evc_lemmas.ev_bynames with
-          | Some (Some _) ->
-              clone_error oc.oc_env (CE_DupOverride (OVK_Lemma, name))
-          | _ ->
-              let map = evc.evc_lemmas.ev_bynames in
-              let map = Msym.add (snd name) tactics map in
-              let evl = { evc.evc_lemmas with ev_bynames = map } in
-                { evc with evc_lemmas = evl }
+          if Msym.mem (snd name) evc.evc_lemmas.ev_bynames then
+              clone_error oc.oc_env (CE_DupOverride (OVK_Lemma, name));
+          let map = evc.evc_lemmas.ev_bynames in
+          let map = Msym.add (snd name) tactics map in
+          let evl = { evc.evc_lemmas with ev_bynames = map } in
+          { evc with evc_lemmas = evl }
         in
           evc_update update1 (fst name) evc
 
@@ -577,8 +566,8 @@ end = struct
     match prf.pthp_mode with
     | `All (name, tags) ->
          all_proof oc evc (name, tags, prf.pthp_tactic)
-    | `Named name ->
-         name_proof oc evc (name, prf.pthp_tactic)
+    | `Named (name, hide) ->
+         name_proof oc evc (name, (prf.pthp_tactic, hide))
 end
 
 (* -------------------------------------------------------------------- *)

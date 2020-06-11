@@ -285,7 +285,7 @@ module Op : sig
   val add  : path -> env -> env
   val bind : symbol -> operator -> env -> env
 
-  val all : ?check:(operator -> bool) -> qsymbol -> env -> (path * t) list
+  val all : ?hidden:bool -> ?check:(operator -> bool) -> qsymbol -> env -> (path * t) list
 
   val reducible : env -> path -> bool
   val reduce    : env -> path -> ty list -> form
