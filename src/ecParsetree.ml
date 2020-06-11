@@ -1032,6 +1032,7 @@ and mt_override = symbol list * symbol
 and th_override = pqsymbol
 
 and op_override_def = {
+  opov_nosmt  : bool;
   opov_tyvars : psymbol list option;
   opov_args   : ptybinding list;
   opov_retty  : pty;
@@ -1071,7 +1072,11 @@ type phint = {
 }
 
 (* -------------------------------------------------------------------- *)
-type puserred = (pqsymbol list * int option) list
+type puseroption =
+  [`Delta | `EqTrue]
+
+type puserred =
+  puseroption list * (pqsymbol list * int option) list
 
 type threquire =
   psymbol option * (psymbol * psymbol option) list * [`Import|`Export] option

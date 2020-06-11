@@ -30,7 +30,7 @@
  *)
 
 (* -------------------------------------------------------------------- *)
-require import AllCore List.
+require import AllCore List Binomial.
 require import Ring StdRing StdOrder StdBigop Discrete RealSeq RealSeries.
 (*---*) import IterOp Bigint Bigreal Bigreal.BRA.
 (*---*) import IntOrder RealOrder RField.
@@ -502,7 +502,7 @@ lemma ratl_mem (s1 s2 : 'a list) :
 proof.
 case=> eqvnil /perm_eq_mem h x; move/(_ x): h.
 rewrite -!has_pred1 !has_count !count_flatten_nseq.
-rewrite !max_ler ?size_ge0; case: (s1 = []) => [^/eqvnil -> ->//|nz_s1].
+rewrite !ler_maxr ?size_ge0; case: (s1 = []) => [^/eqvnil -> ->//|nz_s1].
 rewrite !IntOrder.pmulr_rgt0 ?lt0n ?size_ge0 ?size_eq0 -?eqvnil //.
 by rewrite count_ge0. by rewrite count_ge0.
 qed.
@@ -565,7 +565,7 @@ proof.
 split=> [[]|eq_d].
   move=> eqvnil eq_s12; apply/eq_distr=> x; rewrite !dratE.
   move/perm_eqP/(_ (pred1 x)): eq_s12; rewrite !count_flatten_nseq.
-  rewrite !max_ler ?size_ge0; case: (s1 = []).
+  rewrite !ler_maxr ?size_ge0; case: (s1 = []).
     by move=> ^/eqvnil -> ->.
   move=> ^nz_s1; rewrite eqvnil => nz_s2.
   rewrite eqf_div ?eq_fromint ?size_eq0 // -!fromintM.
@@ -580,7 +580,7 @@ case: s1 s2 eq_d => [|x1 s1] [|x2 s2] //=.
   by apply/perm_eq_refl.
 move=> eq_d; apply/perm_eqP=> p; rewrite !count_flatten_nseq.
 move/(congr1 (fun d => mu d p)): eq_d => /=; rewrite !prratE /=.
-rewrite !max_ler ?addr_ge0 ?size_ge0 // eqf_div;
+rewrite !ler_maxr ?addr_ge0 ?size_ge0 // eqf_div;
   try by rewrite eq_fromint add1z_neq0 ?size_ge0.
 by rewrite -!fromintM eq_fromint !(@mulzC (1 + _)).
 qed.
@@ -590,9 +590,9 @@ lemma eq_sz_dratP ['a] (s1 s2 : 'a list) : size s1 = size s2 =>
 proof.
 move=> eq_sz; rewrite -eq_dratP /eq_ratl -!size_eq0 -!eq_sz /=.
 split=> /perm_eqP eq; apply/perm_eqP=> p; rewrite ?count_flatten_nseq ?eq //.
-move/(_ p): eq; rewrite !count_flatten_nseq max_ler ?size_ge0.
+move/(_ p): eq; rewrite !count_flatten_nseq ler_maxr ?size_ge0.
 case: (s1 = []) => [->>|] /=.
-  suff ->//: s2 = []; by rewrite -size_eq0 eq_sz.
+  suff ->//: s2 = []; by rewrite -size_eq0 -eq_sz.
 by rewrite -size_eq0 => nz_s1 /(IntID.mulfI _ nz_s1).
 qed.
 
@@ -722,7 +722,7 @@ lemma drange1E (m n x : int):
 proof.
 rewrite MUniform.duniform1E mem_range undup_id 1:range_uniq //.
 rewrite size_range; case: (m <= x < n) => // -[le_mx lt_xn].
-rewrite max_ler // IntOrder.subr_ge0 IntOrder.ltrW //.
+rewrite ler_maxr // IntOrder.subr_ge0 IntOrder.ltrW //.
 by apply (IntOrder.ler_lt_trans _ le_mx).
 qed.
 
@@ -731,8 +731,8 @@ lemma drangeE (E : int -> bool) (m n : int) :
 proof.
 rewrite MUniform.duniformE undup_id 1:range_uniq //.
 rewrite size_range; case: (lezWP n m) => [le_nm|le_mn].
-  by rewrite max_lel // 1:subr_le0 // range_geq //.
-by rewrite max_ler // subr_ge0 ltrW // ltzNge.
+  by rewrite ler_maxl // 1:subr_le0 // range_geq //.
+by rewrite ler_maxr // subr_ge0 ltrW // ltzNge.
 qed.
 
 lemma supp_drange (m n i : int): i \in drange m n <=> m <= i < n.
@@ -783,7 +783,7 @@ lemma dletE (d : 'a distr) (f : 'a -> 'b distr) (P : 'b -> bool):
       sum<:'a> (fun a =>
         if P b then mass d a * mass (f a) b else 0%r)).
 proof.
-rewrite muE; have:= dlet_massE d f; rewrite -(@fun_ext (mass _)) => -> /=.
+rewrite muE; have:= dlet_massE d f => /fun_ext /= -> /=.
 by apply/eq_sum=> /= b; case: (P b)=> //=; rewrite sum0.
 qed.
 
@@ -851,7 +851,7 @@ lemma dlet_dlet (d1:'a distr) (F1:'a -> 'b distr) (F2: 'b -> 'c distr):
   dlet (dlet d1 F1) F2 = dlet d1 (fun x1 => dlet (F1 x1) F2).
 proof.
 apply: eq_distr => c; rewrite !dletE; apply eq_sum=> c' /=.
-case: (c' = c) => -> @/pred1 /= {c'}; last by rewrite !sum0.
+case: (c' = c) => @/pred1 -> /= {c'}; last by rewrite !sum0.
 pose F a b := mass d1 a * mass (F1 a) b * mass (F2 b) c.
 have smF: summable (fun ab : _ * _ => F ab.`1 ab.`2).
 + pose G a b := mass d1 a * mass (F1 a) b.
@@ -873,7 +873,7 @@ by rewrite dnull1E.
 qed.
 
 lemma dlet_d_dnull (d : 'a distr): dlet d (fun a => dnull<:'b>) = dnull.
-proof. by apply/eq_distr=> x; rewrite dlet1E dnull1E /= (@sumE_fin _ []). qed.
+proof. by apply/eq_distr=> x; rewrite dlet1E /= dnull1E /= (@sumE_fin _ []). qed.
 
 lemma eq_dlet ['a 'b] (F1 F2 : 'a -> 'b distr) d1 d2 :
   d1 = d2 => F1 == F2 => dlet d1 F1 = dlet d2 F2.
@@ -892,6 +892,16 @@ lemma dmap1E (d : 'a distr) (f : 'a -> 'b) (b : 'b):
 proof.
 rewrite dlet1E muE; apply/eq_sum=> x /=.
 by rewrite massE MUnit.dunit1E /preim /pred1 /(\o); case: (f x = b).
+qed.
+
+lemma dmap1E_can ['a 'b] (d : 'a distr) (f : 'a -> 'b) (g : 'b -> 'a) (b : 'b) :
+     cancel g f
+  => (forall a, a \in d => g (f a) = a)
+  => mu1 (dmap d f) b = mu1 d (g b).
+proof.
+move=> can_fg can_gf; rewrite dmap1E &(mu_eq_support).
+move=> a ad @/(\o) @/pred1; apply/eq_iff; split; last exact: canLR.
+by move=> faE; move/can_gf: ad; rewrite faE.
 qed.
 
 lemma dmapE (d : 'a distr) (f : 'a -> 'b) (P : 'b -> bool):
@@ -1122,7 +1132,7 @@ rewrite muE sum_pair /=; first by apply/summable_cond/summable_mass.
 pose Fa := fun a => if Pa a then mass da a else 0%r.
 pose Fb := fun b => if Pb b then mass db b else 0%r.
 pose F  := fun a => Fa a * sum Fb; rewrite (@eq_sum _ F) /= => [a|].
-+ rewrite -sumZ; apply: eq_sum => /= b @/Fa @/Fb => {Fa Fb F}.
++ rewrite /F -sumZ; apply: eq_sum => /= b @/Fa @/Fb => {Fa Fb F}.
   by case: (Pa a); case: (Pb b) => //= _ _; rewrite !massE dprod1E.
 by rewrite /F sumZr !muE.
 qed.
@@ -1226,7 +1236,7 @@ qed.
 lemma dprodC ['a 'b] (d1 : 'a distr) (d2 : 'b distr) :
   d1 `*` d2 = dmap (d2 `*` d1) (fun (p : 'b * 'a) => (p.`2, p.`1)).
 proof.
-rewrite !dprod_dlet dlet_swap dlet_dlet &(eq_dlet) //= => b.
+rewrite !dprod_dlet dlet_swap /dmap dlet_dlet &(eq_dlet) //= => b.
 by rewrite dlet_dlet &(eq_dlet) //= => a; rewrite dlet_unit.
 qed.
 
@@ -1333,7 +1343,7 @@ proof.
 move=> eq_sz hfu; rewrite supportP djoin1E eq_sz /=.
 rewrite RealOrder.gtr_eqF // Bigreal.prodr_gt0_seq.
 case=> d x /= /mem_zip [d_ds x_xs] _.
-by rewrite supportP -supportPn /=; apply: hfu.
+by rewrite -/(_ \in _) supportP -supportPn /=; apply: hfu.
 qed.
 
 lemma djoin_uni (ds:'a distr list): 
@@ -1348,7 +1358,7 @@ qed.
 lemma djoin_dmap ['a 'b 'c] (d : 'a -> 'b distr) (xs : 'a list) (f : 'b -> 'c):
   dmap (djoin (map d xs)) (map f) = djoin (map (fun x => dmap (d x) f) xs).
 proof.
-elim: xs => [|x xs ih]; rewrite ?djoinE ?dmap_dunit //=.
+elim: xs => /= [|x xs ih]; first by rewrite !djoinE ?dmap_dunit.
 by rewrite !djoin_cons -ih /= dmap_dprod /= !dmap_comp.
 qed.
 
@@ -1358,6 +1368,47 @@ lemma supp_djoinmap ['a 'b] (d : 'a -> 'b distr) xs ys:
 proof.
 rewrite supp_djoin size_map; congr; apply/eq_iff.
 by rewrite zip_mapl all_map &(eq_all).
+qed.
+
+(* -------------------------------------------------------------------- *)
+op mbin (p : real) (n : int) = fun k =>
+  (bin n k)%r * (p ^ k * (1%r - p) ^ (n - k)).
+
+lemma mbin_support p n k : mbin p n k <> 0%r => 0 <= k <= n.
+proof.
+apply: contraR; rewrite andaE negb_and -!ltrNge.
+by case=> ? @/mbin; [rewrite bin_lt0r | rewrite bin_gt].
+qed.
+
+lemma isdistr_mbin p n : 0%r <= p <= 1%r => isdistr (mbin p n).
+proof.
+move=> rg_p; rewrite (@isdistr_finP (range 0 (n+1))).
++ apply: range_uniq.
++ by move=> k /mbin_support; rewrite mem_range ltzS.
++ move=> k @/mbin; rewrite mulr_ge0.
+  * by rewrite le_fromint ge0_bin.
+  by rewrite mulr_ge0 expr_ge0 /#.
+case: (n < 0) => [lt0_n|/lezNgt ge0_n]; first by rewrite big_geq //#.
+by rewrite -(@BCR.binomial p (1%r - p) n ge0_n) addrC subrK expr1z.
+qed.
+
+op dbin (p : real) (n : int) = mk (mbin p n).
+
+lemma dbin1E (p : real) (n k : int) : 0%r <= p <= 1%r =>
+  mu1 (dbin p n) k = (bin n k)%r * (p ^ k * (1%r - p) ^ (n - k)).
+proof. by move=> rg_p; rewrite -massE muK //; apply/isdistr_mbin. qed.
+
+lemma ll_dbin p n : 0 <= n => 0%r <= p <= 1%r => is_lossless (dbin p n).
+proof.
+move=> ge0_n rg_p; rewrite /is_lossless weightE muK 1:&(isdistr_mbin) //.
+rewrite (@sumE_fin _ (range 0 (n+1))) 1:range_uniq.
++ by move=> k /mbin_support; rewrite mem_range ltzS.
++ by rewrite -BCR.binomial // addrC subrK expr1z.
+qed.
+
+lemma supp_dbin p n k : 0%r <= p <= 1%r => k \in dbin p n => 0 <= k <= n.
+proof.
+by move=> rg_p /supportP; rewrite dbin1E // => /mbin_support.
 qed.
 
 (* -------------------------------------------------------------------- *)

@@ -10,7 +10,7 @@
  * ssreflect Coq extension. *)
 
 (* -------------------------------------------------------------------- *)
-require import AllCore Ring.
+require import AllCore.
 
 (* -------------------------------------------------------------------- *)
 type 'a list = [
@@ -199,15 +199,14 @@ op nseq (n : int) (x : 'a) = iter n ((::) x) [].
 lemma size_nseq n (x : 'a) : size (nseq n x) = max 0 n.
 proof.
 elim/natind: n => [n le0n|n ge0n ih] @/nseq.
-  by rewrite iter0 // max_lel.
-by rewrite iterS //= ih !max_ler 1?addzC // addz_ge0.
++ by rewrite iter0 //#. + by rewrite iterS //= ih /#.
 qed.
 
 lemma nseq0 (x : 'a): nseq 0 x = [].
-proof. by rewrite iter0. qed.
+proof. by rewrite /nseq iter0. qed.
 
 lemma nseq0_le n (x : 'a) : n <= 0 => nseq n x = [].
-proof. by move=> le0_n; rewrite iter0. qed.
+proof. by move=> le0_n; rewrite /nseq iter0. qed.
 
 lemma nseq_max0 n (x : 'a) : nseq (max 0 n) x = nseq n x.
 proof.
@@ -216,10 +215,10 @@ by rewrite nseq0 => /nseq0_le<:'a> ->.
 qed.
 
 lemma nseq1 (x : 'a) : nseq 1 x = [x].
-proof. by rewrite iter1. qed.
+proof. by rewrite /nseq iter1. qed.
 
 lemma nseqS n (x : 'a) : 0 <= n => nseq (n+1) x = x :: nseq n x.
-proof. by move=> le0_n; rewrite iterS. qed.
+proof. by move=> le0_n; rewrite /nseq iterS. qed.
 
 lemma nseqSr n (x : 'a): 0 <= n => nseq (n+1) x = rcons (nseq n x) x.
 proof.
@@ -266,6 +265,13 @@ elim: s n => //= x s ih n; case: (n = 0) => [->|_ _].
   by smt w=(size_ge0). by rewrite ih /#.
 qed.
 
+lemma nth_change_dfl ['a] (x0 x1 : 'a) xs i :
+  0 <= i < size xs => nth x1 xs i = nth x0 xs i.
+proof.
+elim: xs i => /= [|x xs ih] i rgi; first by smt().
+case: (i = 0) => //= nz_i; apply: ih => /#.
+qed.
+
 lemma nth_neg (x0 : 'a) s n: n < 0 => nth x0 s n = x0.
 proof. by elim: s n => //= /#. qed.
 
@@ -310,7 +316,7 @@ proof.                        (* BUG: PROOF IS TOO LONG *)
 case=> ge0_i ^lt_in /ltzW le_in; have/lez_trans/(_ _ le_in) := ge0_i.
 move=> {le_in} ge0_n; elim: n ge0_n i ge0_i lt_in => [|n ge0_n ih].
   by move=> i ge0_i; rewrite ltz_def eqz_leq ge0_i /= => -[].
-move=> i; rewrite iterS //; elim/natcase: i.
+move=> i; rewrite /nseq iterS //; elim/natcase: i.
   move=> i le0_i ge0_i; have ->//: i = 0 by rewrite eqz_leq.
 move=> i ge0_i _; rewrite ltz_add2r /= => /(ih _ ge0_i).
 by rewrite addz_neq0 //= -addzA /= => ->.
@@ -326,7 +332,8 @@ qed.
 
 lemma last_nseq (x0 x : 'a, n : int) : 0 < n => last x0 (nseq n x) = x.
 proof.
-move=> gt0_n; rewrite (last_nth x0) size_nseq max_ler ?ltzW //=.
+move=> gt0_n; rewrite (last_nth x0) size_nseq.
+rewrite (_ : max 0 n = n) 1:/# ?ltzW //=.
 by rewrite eqn0Ngt ?ltzW // gt0_n /= nth_nseq /#.
 qed.
 
@@ -1668,8 +1675,7 @@ theory Iota.
   lemma size_iota m n: size (iota_ m n) = max 0 n.
   proof.
     elim/natind: n m => [n hn|n hn ih] m.
-      by rewrite iota0 // max_lel.
-    rewrite iotaS //= ih max_ler // smt.
+    + by rewrite iota0 //#. + by rewrite iotaS //= ih //#.
   qed.
 
   lemma iota_add m n1 n2 : 0 <= n1 => 0 <= n2 =>
@@ -1687,8 +1693,8 @@ theory Iota.
   lemma nth_iota m n i w: 0 <= i < n => nth w (iota_ m n) i = m + i.
   proof.
     case=> ge0_i lt_in; rewrite (_ : n = i + ((n-i-1)+1)) 1:/#.
-    rewrite iota_add // 1:/# nth_cat size_iota max_ler //=.
-    by rewrite (iotaS _ (n-i-1)) //#.
+    rewrite iota_add // 1:/# nth_cat size_iota (_ : max 0 i = i) 1:/#.
+    by rewrite /= (iotaS _ (n-i-1)) //#.
   qed.
 
   lemma iota_addl (m1 m2:int) n: iota_ (m1 + m2) n = map ((+) m1) (iota_ m2 n).
@@ -1727,22 +1733,22 @@ theory Iota.
   proof.
   move=> @/min; case: (m < k)=> [lt_mk|/lezNgt le_km].
     case: (m < 0) => [/ltzW/iota0->//|/lezNgt ge0_m].
-    by rewrite take_oversize // size_iota max_ler 2:ltzW.
+    by rewrite take_oversize // size_iota /#.
   case: (k < 0) => [^ /ltzW /take_le0<:int> -> /ltzW/iota0 ->//|].
   move/lezNgt=> ge0_k; rewrite -{1}(addzK (-k) m) /=.
   rewrite addzC iota_add ?subz_ge0 // take_cat.
-  by rewrite size_iota max_ler // ltzz /= take0 cats0.
+  by rewrite size_iota (_ : max 0 k = k) 1:/# // ltzz /= take0 cats0.
   qed.
 
   lemma drop_iota (k n m : int): 0 <= k =>
     drop k (iota_ n m) = iota_ (n+k) (m-k).
   proof.
   move=> ge0_k; case: (m < k) => [lt_mk|/lezNgt le_km].
-    rewrite drop_oversize ?size_iota ?geq_max ?(@ltzW m) //.
+    rewrite drop_oversize ?size_iota 1:/# ?(@ltzW m) //.
     by rewrite iota0 // subz_le0 ltzW.
   rewrite -{1}(addzK (-k) m) /= addzC.
   rewrite iota_add ?subz_ge0 // drop_cat size_iota.
-  by rewrite max_ler // ltzz /= drop0.
+  by rewrite (_ : max 0 k = k) 1:/# // ltzz /= drop0.
   qed.
 
   lemma nosmt onth_iota_some start sz n x:
@@ -1823,9 +1829,9 @@ lemma map_nth_range (x0 : 'a) s:
   map (fun i => nth x0 s i) (range 0 (size s)) = s.
 proof.
 apply/(@eq_from_nth x0)=> [|i]; rewrite ?size_map.
-  by rewrite size_range /= max_ler.
+  by rewrite size_range /=; smt(size_ge0).
 move=> le_is; rewrite (@nth_map i) //= nth_range //=.
-by move: le_is; rewrite size_range max_ler /=.
+by move: le_is; rewrite size_range; smt(size_ge0).
 qed.
 
 (* -------------------------------------------------------------------- *)
@@ -2170,8 +2176,8 @@ lemma count_flatten_nseq (p : 'a -> bool) k s :
   count p (flatten (nseq k s)) = (max 0 k) * (count p s).
 proof.
 case: (lez_total 0 k) => [ge0_k|le0_k]; last first.
-  by rewrite max_lel //= nseq0_le // flatten_nil.
-rewrite max_ler //; elim: k ge0_k => [|k ge0_k ih].
+  by rewrite (_ : max 0 k = 0) 1:/# //= nseq0_le // flatten_nil.
+rewrite (_ : max 0 k = k) 1:/#  //; elim: k ge0_k => [|k ge0_k ih].
   by rewrite nseq0 flatten_nil.
 by rewrite nseqS // flatten_cons count_cat /#.
 qed.
@@ -2263,7 +2269,7 @@ elim: s2 s1 => [|y s2 ih] [|x s1] /=; last (split; last first).
 + by exists [].
 + by apply/negP; do 2! case.
 + exists (nseq (size s2 + 1) false); rewrite ?mask_false /=.
-  by rewrite size_nseq max_ler 1?addzC // addz_ge0 ?size_ge0.
+  by rewrite size_nseq; smt(size_ge0).
 + case/ih=> m [eqsz def]; exists ((y = x) :: m) => //=.
   by rewrite eqsz /=; case _: (y = x) def => /= [!->|].
 case: (y = x) => [->>|ne_yx]; last first.
@@ -2283,7 +2289,7 @@ have lt_im: i < size m.
 exists (take i m ++ drop (i+1) m); split.
   rewrite size_cat ?(size_take, size_drop).
     by rewrite index_ge0. by rewrite addz_ge0 ?index_ge0.
-  by rewrite lt_im /= max_ler 2:/# subz_ge0 -ltzE.
+  by rewrite lt_im /=; smt(size_ge0).
 have /= -> := congr1 behead _ _ eq; rewrite -(cat_take_drop i s2).
 rewrite -{1}(cat_take_drop i m) def -cat_cons.
 have sz_i_s2: size (take i s2) = i.
@@ -2291,7 +2297,7 @@ have sz_i_s2: size (take i s2) = i.
 have h: size (take i m) = size (take i s2).
 + by rewrite sz_i_s2 size_takel // index_ge0 /= ltzW.
 rewrite lastI cat_rcons !mask_cat ?size_nseq ?size_belast.
-+ by rewrite h max_ler. + by rewrite h max_ler.
++ by rewrite h; smt(size_ge0). + by rewrite h; smt(size_ge0).
 rewrite !mask_false (drop_nth true) ?index_ge0 //.
 by rewrite nth_index -?index_mem.
 qed.
@@ -2503,7 +2509,7 @@ lemma nosmt map_zip_nth ['a, 'b, 'c] dk dv (f: 'a * 'b -> 'c) ks vs:
    = map (fun i => f (nth dk ks i, nth dv vs i)) (range 0 (size ks)).
 proof.
 move=> eq_sz; rewrite -(@map_nth_range (dk, dv) (zip ks vs)).
-rewrite /range /= size_zip min_ler ?eq_sz //= -map_comp.
+rewrite /range /= size_zip /min eq_sz //= -map_comp.
 by apply: eq_in_map => i @/(\o); rewrite mem_iota /= nth_zip.
 qed.
 

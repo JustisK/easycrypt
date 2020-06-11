@@ -1,6 +1,6 @@
 (* -------------------------------------------------------------------- *)
-require import AllCore Int List Real Distr FSet SmtMap.
-require import IntExtra IntDiv RealExtra Mu_mem StdRing StdOrder StdBigop.
+require import AllCore List Distr FSet SmtMap.
+require import IntDiv Mu_mem StdRing StdOrder StdBigop.
 (*---*) import Bigint Ring.IntID RField IntOrder RealOrder BIA.
 require (*--*) FinType.
 
@@ -328,7 +328,7 @@ section.
     = Pr[Exp'(A).main() @ &m: Bad P.logP F.m].
   proof.
   byequiv (_: ={glob A} ==> ={P.logP, F.m})=> //; proc.
-  transitivity{1} { F.init(); Psample.init(); Resample.resample(); b = Exp'A.A.a(); }
+  transitivity{1} { F.init(); Psample.init(); Resample.resample(); b <@ Exp'A.A.a(); }
      (={glob A} ==> ={F.m, P.logP})
      (={glob A} ==> ={F.m, P.logP})=> //.
     (* Equality on A's globals *)
@@ -385,18 +385,18 @@ module C (A:Adv,F:ARF,P:APRG) = {
 
   module CF = {
     proc f(x): seed * output = {
-      var r = witness;
+      var r <- witness;
 
-      if (cF < qF) { cF = cF + 1; r = F.f(x);}
+      if (cF < qF) { cF <- cF + 1; r <@ F.f(x);}
       return r;
     }
   }
 
   module CP = {
     proc prg (): output = {
-      var r = witness;
+      var r <- witness;
 
-      if (cP < qP) { cP = cP + 1; r = P.prg();}
+      if (cP < qP) { cP <- cP + 1; r <@ P.prg();}
       return r;
     }
   }
@@ -406,9 +406,9 @@ module C (A:Adv,F:ARF,P:APRG) = {
   proc a(): bool = {
     var b:bool;
 
-    cF = 0;
-    cP = 0;
-    b = A.a();
+    cF <- 0;
+    cP <- 0;
+    b <@ A.a();
     return b;
   }
 }.
@@ -494,7 +494,7 @@ section.
     apply/ler_wpmul2r; first smt w=Support.card_gt0. apply/le_fromint.
     rewrite -{1}(@add0z qF) big_addn /= /predT -/predT.
     rewrite (@addzC qF) !addrK big_split big_constz.
-    rewrite count_predT size_range /= max_ler ?size_ge0 addrC.
+    rewrite count_predT size_range /= ler_maxr ?size_ge0 addrC.
     rewrite ler_add 1:mulrC ?ler_wpmul2r // ?ge0_qF.
     rewrite sumidE ?size_ge0 leq_div2r // mulrC.
     move: (size_ge0 logP) szlog_le_qP => /IntOrder.ler_eqVlt [<- /#|gt0_sz le].

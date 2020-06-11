@@ -1,4 +1,4 @@
-require import AllCore Int IntExtra IntDiv List.
+require import AllCore IntDiv List.
 require import Ring StdRing StdOrder StdBigop Distr.
 require import BitEncoding.
 require (*--*) BitWord MAC_then_Pad_then_CBC.
@@ -110,8 +110,8 @@ instance bring with block
   proof addrA     by apply/xorbA
   proof addrC     by apply/xorbC
   proof addrK     by apply/xorbK
-  proof mulr1     by apply andb1
-  proof mulrA     by rewrite andbA
+  proof mulr1     by apply/andb1
+  proof mulrA     by apply/andbA
   proof mulrC     by apply/andbC
   proof mulrDl    by apply/andbDl
   proof mulrK     by apply/andbK
@@ -299,8 +299,8 @@ proof. by rewrite /padding /= size_mkseq [smt (size_ge0 @IntDiv)]. qed.
 lemma last_padding x m: last x (padding (pad_length m)) = int2o (16 - size m %% 16).
 proof.
 rewrite /padding /mkseq /= -(last_nonempty ((fun x => int2o (16 - size m %% 16)) witness<:int>)).
-+ case {-1}(iota_ 0 (16 - size m %% 16)) (eq_refl (iota_ 0 (16 - size m %% 16)))=> //=;
-  by have:= size_iota 0 (16 - size m %% 16); smt (@IntDiv).
++ have h: 0 < 16 - size m %% 16 by rewrite subr_gt0 &(ltz_pmod).
+  by apply/negP => /(congr1 size); rewrite size_map /= size_iota /#.
 by rewrite last_map.
 qed.
 
@@ -331,7 +331,7 @@ have -> /=: bs2os (pad m t)
 + by rewrite /pad /= os2bsK // size_padded [smt (@IntDiv)].
 rewrite !last_cat last_padding int2oK.
 + split=> [|_]; first by smt (size_ge0 @IntDiv).
-  by apply/(ler_lt_trans 16); [smt (size_ge0 @IntDiv)|smt (powS pow0)].
+  by apply/(ler_lt_trans 16); [smt (size_ge0 @IntDiv)|smt (exprS expr0)].
 rewrite drop_size_cat.
 + by rewrite !size_cat size_padding /#.
 rewrite {1}/pad_length /=.
@@ -347,8 +347,7 @@ lemma leak_pad m t:
   size (pad m t)
   = size (pad (mkseq (fun (i : int) => zerow) (size m - size m %% 16)) t).
 proof.
-rewrite /pad /= !size_os2bs !size_padded size_mkseq.
-rewrite max_ler.
+rewrite /pad /= !size_os2bs !size_padded size_mkseq ler_maxr.
 + case: (size m < 16)=> [|/lezNgt] szm_16.
   + by rewrite modz_small 1:size_ge0.
   smt (@IntDiv).
@@ -522,7 +521,8 @@ conseq (_: true ==> true) (_: _ ==> _)=> //=.
   auto=> /> &hr; split.
   + by rewrite size_ge0 take0.
   move=> p /lezNgt le_szc_p _ ge_szc_p.
-  rewrite (ler_asym (size p) (size (behead c{hr})) _) ?ge_szc_p ?le_szc_p take_size=> p_def.
+  rewrite (ler_asym (size p) (size (behead c{hr})) _);
+    rewrite ?ge_szc_p ?le_szc_p // take_size => p_def.
   split.
   + case: {-1}(unpad p) (eq_refl (unpad p))=> //= @/mee_cbc - [] m t.
     by rewrite /mee_dec /= -p_def=> -> /=.

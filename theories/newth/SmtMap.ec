@@ -171,7 +171,7 @@ lemma nosmt fmap_eqP ['a 'b] (m1 m2 : ('a, 'b) fmap) :
   (forall x, m1.[x] = m2.[x]) <=> m1 = m2.
 proof.
 split=> [pw_eq|->] //; rewrite -tomapK -(tomapK m2).
-by congr; apply/Map.map_eqP=> x; rewrite pw_eq.
+by congr; apply/Map.map_eqP=> x; rewrite -!getE pw_eq.
 qed.
 
 (* -------------------------------------------------------------------- *)
@@ -503,7 +503,7 @@ lemma filter_valE ['a 'b] (p : 'a -> 'b -> bool) m :
 proof.
 rewrite /filter ofmapK //; pose P z := (tomap m).[z] <> None.
 apply/(finite_leq P)/isfmap_offmap => y @/P.
-by rewrite !Map.getE Map.offunK /= getE; case: (tomap m).[y].
+by rewrite !Map.getE Map.offunK -Map.getE /= getE; case: (tomap m).[y].
 qed.
 
 (* -------------------------------------------------------------------- *)
