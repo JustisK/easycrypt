@@ -11,6 +11,7 @@ open EcUtils
 open EcIdent
 open EcPath
 open EcTypes
+open EcDecl
 open EcModules
 open EcFol
 open EcEnv
@@ -412,6 +413,48 @@ let is_record env f =
   | _ -> false
 
 (* -------------------------------------------------------------------- *)
+
+let ensure b exn =
+  if not b then raise exn
+
+let check_memtype exn env mt1 mt2 =
+  match mt1, mt2 with
+  | None, None -> ()
+  | Some lmt1, Some lmt2 ->
+    let xp1, xp2 = EcMemory.lmt_xpath lmt1, EcMemory.lmt_xpath lmt2 in
+    ensure (EqTest.for_xp env xp1 xp2) exn;
+    let m1, m2 = EcMemory.lmt_bindings lmt1, EcMemory.lmt_bindings lmt2 in
+    ensure (EcSymbols.Msym.equal
+              (fun (p1,ty1) (p2,ty2) ->
+                p1 = p2 && EqTest.for_type env ty1 ty2) m1 m2) exn
+  | _, _ -> raise exn
+
+(* TODO all declaration in env, do it also in add local *)
+let check_binding exn (env, subst) (x1,gty1) (x2,gty2) =
+  let gty2 = Fsubst.gty_subst subst gty2 in
+  match gty1, gty2 with
+  | GTty ty1, GTty ty2 ->
+    ensure (EqTest.for_type env ty1 ty2) exn;
+    env,
+    if id_equal x1 x2 then subst else
+      Fsubst.f_bind_rename subst x2 x1 ty1
+  | GTmodty (p1, r1) , GTmodty(p2, r2) ->
+    ensure (ModTy.mod_type_equiv env p1 p2 &&
+              NormMp.equal_restr env r1 r2) exn;
+    Mod.bind_local x1 p1 r1 env,
+    if id_equal x1 x2 then subst
+    else Fsubst.f_bind_mod subst x2 (EcPath.mident x1)
+  | GTmem   me1, GTmem me2  ->
+    check_memtype exn env me1 me2;
+    env,
+    if id_equal x1 x2 then subst
+    else Fsubst.f_bind_mem subst x2 x1
+  | _, _ -> raise exn
+
+let check_bindings exn env subst bd1 bd2 =
+  List.fold_left2 (check_binding exn) (env,subst) bd1 bd2
+
+(* -------------------------------------------------------------------- *)
 let rec h_red_x ri env hyps f =
   match f.f_node with
     (* β-reduction *)
@@ -807,43 +850,6 @@ and check_alpha_equal ri hyps f1 f2 =
       List.fold_left2 add_local (env,subst) lid1 lid2
     | _, _ -> error() in
 
-  let check_memtype env mt1 mt2 =
-    match mt1, mt2 with
-    | None, None -> ()
-    | Some lmt1, Some lmt2 ->
-      let xp1, xp2 = EcMemory.lmt_xpath lmt1, EcMemory.lmt_xpath lmt2 in
-      ensure (EqTest.for_xp env xp1 xp2);
-      let m1, m2 = EcMemory.lmt_bindings lmt1, EcMemory.lmt_bindings lmt2 in
-      ensure (EcSymbols.Msym.equal
-                (fun (p1,ty1) (p2,ty2) ->
-                  p1 = p2 && EqTest.for_type env ty1 ty2) m1 m2)
-    | _, _ -> error () in
-
-  (* TODO all declaration in env, do it also in add local *)
-  let check_binding (env, subst) (x1,gty1) (x2,gty2) =
-    let gty2 = Fsubst.gty_subst subst gty2 in
-    match gty1, gty2 with
-    | GTty ty1, GTty ty2 ->
-      ensure (EqTest.for_type env ty1 ty2);
-      env,
-      if id_equal x1 x2 then subst else
-        Fsubst.f_bind_rename subst x2 x1 ty1
-    | GTmodty (p1, r1) , GTmodty(p2, r2) ->
-      ensure (ModTy.mod_type_equiv env p1 p2 &&
-                NormMp.equal_restr env r1 r2);
-      Mod.bind_local x1 p1 r1 env,
-      if id_equal x1 x2 then subst
-      else Fsubst.f_bind_mod subst x2 (EcPath.mident x1)
-    | GTmem   me1, GTmem me2  ->
-      check_memtype env me1 me2;
-      env,
-      if id_equal x1 x2 then subst
-      else Fsubst.f_bind_mem subst x2 x1
-    | _, _ -> error () in
-
-  let check_bindings env subst bd1 bd2 =
-    List.fold_left2 check_binding (env,subst) bd1 bd2 in
-
   let check_local subst id1 f2 id2 =
     match (Mid.find_def f2 id2 subst.fs_loc).f_node with
     | Flocal id2 -> ensure (EcIdent.id_equal id1 id2)
@@ -877,7 +883,7 @@ and check_alpha_equal ri hyps f1 f2 =
 
     | Fquant(q1,bd1,f1'), Fquant(q2,bd2,f2') when
         q1 = q2 && List.length bd1 = List.length bd2 ->
-      let env, subst = check_bindings env subst bd1 bd2 in
+      let env, subst = check_bindings exn env subst bd1 bd2 in
       aux env subst f1' f2'
 
     | Fif(a1,b1,c1), Fif(a2,b2,c2) ->
@@ -1173,3 +1179,131 @@ module User = struct
         rl_prio = prio; }
 
 end
+
+exception OpNotConv
+
+let error_body b =
+  if not b then raise OpNotConv
+
+let conv_expr (env:env) s e1 e2 =
+  let f1 = form_of_expr mhr e1 in
+  let f2 = form_of_expr mhr e2 in
+  error_body (is_conv (LDecl.init env []) f1 (Fsubst.f_subst s f2))
+
+let get_open_oper env p tys =
+  let oper = Op.by_path p env in
+  let _, okind = EcSubst.open_oper oper tys in
+  match okind with
+  | OB_oper (Some ob) -> ob
+  | _ -> raise OpNotConv
+
+let rec conv_oper env ob1 ob2 =
+  match ob1, ob2 with
+  | OP_Plain(e1,_), OP_Plain(e2,_)  ->
+    Format.eprintf "[W]: ICI1@.";
+    conv_expr env Fsubst.f_subst_id e1 e2
+  | OP_Plain({e_node = Eop(p,tys)},_), _ ->
+    Format.eprintf "[W]: ICI2@.";
+    let ob1 = get_open_oper env p tys  in
+    conv_oper env ob1 ob2
+  | _, OP_Plain({e_node = Eop(p,tys)}, _) ->
+    Format.eprintf "[W]: ICI3@.";
+    let ob2 = get_open_oper env p tys in
+    conv_oper env ob1 ob2
+  | OP_Constr(p1,i1), OP_Constr(p2,i2) ->
+    error_body (EcPath.p_equal p1 p2 && i1 = i2)
+  | OP_Record p1, OP_Record p2 ->
+    error_body (EcPath.p_equal p1 p2)
+  | OP_Proj(p1,i11,i12), OP_Proj(p2,i21,i22) ->
+    error_body (EcPath.p_equal p1 p2 && i11 = i21 && i12 = i22)
+  | OP_Fix f1, OP_Fix f2 ->
+    conv_opfix env f1 f2
+  | OP_TC, OP_TC -> ()
+  | _, _ -> raise OpNotConv
+
+and conv_opfix env f1 f2 =
+  let s = conv_params env Fsubst.f_subst_id f1.opf_args f2.opf_args in
+  error_body (EqTest.for_type env f1.opf_resty f2.opf_resty);
+  error_body (f1.opf_struct = f2.opf_struct);
+  conv_opbranches env s f1.opf_branches f2.opf_branches
+
+and conv_params env s p1 p2 =
+  error_body (List.length p1 = List.length p2);
+  let doit s (id1,ty1) (id2,ty2) =
+    error_body (EqTest.for_type env ty1 ty2);
+    Fsubst.f_bind_local s id2 (f_local id1 ty1) in
+  List.fold_left2 doit s p1 p2
+
+and conv_opbranches env s ob1 ob2 =
+  match ob1, ob2 with
+  | OPB_Leaf(d1,e1), OPB_Leaf(d2,e2) ->
+    error_body (List.length d1 = List.length d2);
+    let s =
+      List.fold_left2 (conv_params env) s d1 d2 in
+    conv_expr env s e1 e2
+
+  | OPB_Branch obs1, OPB_Branch obs2 ->
+    error_body (Parray.length obs1 = Parray.length obs2);
+    Parray.iter2 (conv_opbranch env s) obs1 obs2
+  | _, _ -> raise OpNotConv
+
+and conv_opbranch env s ob1 ob2 =
+  error_body (EcPath.p_equal (fst ob1.opb_ctor) (fst ob2.opb_ctor));
+  error_body (snd ob1.opb_ctor = snd ob2.opb_ctor);
+  conv_opbranches env s ob1.opb_sub ob2.opb_sub
+
+let get_open_pred env p tys =
+  let oper = Op.by_path p env in
+  let _, okind = EcSubst.open_oper oper tys in
+  match okind with
+  | OB_pred (Some pb) -> pb
+  | _ -> raise OpNotConv
+
+let rec conv_pred env pb1 pb2 =
+  match pb1, pb2 with
+  | PR_Plain f1, PR_Plain f2 -> error_body (is_conv (LDecl.init env []) f1 f2)
+  | PR_Plain {f_node = Fop(p,tys)}, _ ->
+    let pb1 = get_open_pred env p tys  in
+    conv_pred env pb1 pb2
+  | _, PR_Plain {f_node = Fop(p,tys)} ->
+    let pb2 = get_open_pred env p tys  in
+    conv_pred env pb1 pb2
+  | PR_Ind pr1, PR_Ind pr2 ->
+    conv_ind env pr1 pr2
+  | _, _ -> raise OpNotConv
+
+and conv_ind env pi1 pi2 =
+  let s = conv_params env Fsubst.f_subst_id pi1.pri_args pi2.pri_args in
+  error_body (List.length pi1.pri_ctors = List.length pi2.pri_ctors);
+  List.iter2 (conv_prctor env s) pi1.pri_ctors pi2.pri_ctors
+
+and conv_prctor env s prc1 prc2 =
+  error_body (EcSymbols.sym_equal prc1.prc_ctor prc2.prc_ctor);
+  let env, s = check_bindings OpNotConv env s prc1.prc_bds prc2.prc_bds in
+  error_body (List.length prc1.prc_spec = List.length prc2.prc_spec);
+  let doit f1 f2 =
+    error_body (is_conv (LDecl.init env []) f1 (Fsubst.f_subst s f2)) in
+  List.iter2 doit prc1.prc_spec prc2.prc_spec
+
+let conv_nott env nb1 nb2 =
+  let s = conv_params env Fsubst.f_subst_id nb1.ont_args nb2.ont_args in
+  (* We do not check ont_resty because it is redundant *)
+  conv_expr env s nb1.ont_body nb2.ont_body
+
+let conv_operator env oper1 oper2 =
+  let open EcDecl in
+  let params = oper1.op_tparams in
+  error_body (List.length params = List.length oper2.op_tparams);
+  let oty1, okind1 = oper1.op_ty, oper2.op_kind in
+  let tparams = List.map (fun (id,_) -> tvar id) params in
+  let oty2, okind2 = EcSubst.open_oper oper2 tparams in
+  error_body (EqTest.for_type env oty1 oty2);
+  let hyps = EcEnv.LDecl.init env params in
+  let env  = EcEnv.LDecl.toenv hyps in
+  match okind1, okind2 with
+  | OB_oper None      , OB_oper None       -> ()
+  | OB_pred None      , OB_pred None       -> ()
+  | OB_oper (Some ob1), OB_oper (Some ob2) -> conv_oper env ob1 ob2
+  | OB_pred (Some pb1), OB_pred (Some pb2) -> conv_pred env pb1 pb2
+  | OB_nott nb1       , OB_nott nb2        -> conv_nott env nb1 nb2
+  | _                 , _                  -> raise OpNotConv

@@ -559,9 +559,12 @@ end = struct
 
     | DifferentType (exp, got) ->
       let ppe = EcPrinting.PPEnv.ofenv env in
-
       Format.fprintf fmt "has type %a instead of %a"
         (EcPrinting.pp_type ppe) got  (EcPrinting.pp_type ppe) exp
+    | OpBody  ->
+      Format.fprintf fmt "incompatible body"
+    | TyBody  ->
+      Format.fprintf fmt "incompatible type declaration"
 
   let pp_clone_error env fmt error =
     let msg x = Format.fprintf fmt x in
@@ -597,6 +600,16 @@ end = struct
     | CE_PrIncompatible (x, err) ->
         msg "predicate `%s' body %a"
           (string_of_qsymbol x) (pp_incompatible env) err
+
+    | CE_TyIncompatible (x, err) ->
+        msg "type `%s` %a"
+          (string_of_qsymbol x) (pp_incompatible env) err
+    | CE_ModTyIncompatible x ->
+        msg "module type `%s` is incompatible"
+          (string_of_qsymbol x)
+    | CE_ModIncompatible x ->
+        msg "module `%s` is incompatible"
+          (string_of_qsymbol x)
 
     | CE_InvalidRE x ->
         msg "invalid regexp: `%s'" x

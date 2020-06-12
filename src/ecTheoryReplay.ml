@@ -60,17 +60,200 @@ and 'a ovrhooks = {
 (* -------------------------------------------------------------------- *)
 exception Incompatible of incompatible
 
-let ty_compatible env ue (rtyvars, rty) (ntyvars, nty) =
+let tparams_compatible rtyvars ntyvars =
   let rlen = List.length rtyvars and nlen = List.length ntyvars in
   if rlen <> nlen then
-    raise (Incompatible (NotSameNumberOfTyParam(rlen,nlen)));
+    raise (Incompatible (NotSameNumberOfTyParam(rlen,nlen)))
 
+let ty_compatible env ue (rtyvars, rty) (ntyvars, nty) =
+  tparams_compatible rtyvars ntyvars;
   let subst = Tvar.init rtyvars (List.map tvar ntyvars) in
   let rty   = Tvar.subst subst rty in
-
   try  EcUnify.unify env ue rty nty
   with EcUnify.UnificationFailure _ ->
     raise (Incompatible (DifferentType (rty, nty)))
+
+(* -------------------------------------------------------------------- *)
+let error_body exn b = if not b then raise exn
+
+(* -------------------------------------------------------------------- *)
+
+let constr_compatible exn env cs1 cs2 =
+  error_body exn (List.length cs1 = List.length cs2);
+  let doit (s1,tys1) (s2,tys2) =
+    error_body exn (EcSymbols.sym_equal s1 s2);
+    error_body exn (List.length tys1 = List.length tys2);
+    List.iter2 (fun ty1 ty2 -> error_body exn (EcReduction.EqTest.for_type env ty1 ty2)) tys1 tys2 in
+  List.iter2 doit cs1 cs2
+
+let datatype_compatible exn hyps ty1 ty2 =
+  let env = EcEnv.LDecl.toenv hyps in
+  constr_compatible exn env ty1.tydt_ctors ty2.tydt_ctors;
+  error_body exn (EcReduction.is_conv hyps ty1.tydt_schcase ty2.tydt_schcase);
+  error_body exn (EcReduction.is_conv hyps ty1.tydt_schelim ty2.tydt_schelim)
+
+let record_compatible exn hyps f1 pr1 f2 pr2 =
+  error_body exn (EcReduction.is_conv hyps f1 f2);
+  error_body exn (List.length pr1 = List.length pr2);
+  let env = EcEnv.LDecl.toenv hyps in
+  let doit (s1,ty1) (s2,ty2) =
+    error_body exn (EcSymbols.sym_equal s1 s2);
+    error_body exn (EcReduction.EqTest.for_type env ty1 ty2) in
+  List.iter2 doit pr1 pr2
+
+let get_open_tydecl hyps p tys =
+  let tydecl = EcEnv.Ty.by_path p (EcEnv.LDecl.toenv hyps) in
+  EcSubst.open_tydecl tydecl tys
+
+let rec tybody_compatible exn hyps ty_body1 ty_body2 =
+  match ty_body1, ty_body2 with
+  | `Abstract _, `Abstract _ -> () (* FIXME Sp.t *)
+  | `Concrete ty1   , `Concrete ty2 -> error_body exn (EcReduction.EqTest.for_type (EcEnv.LDecl.toenv hyps) ty1 ty2)
+  | `Datatype ty1   , `Datatype ty2 -> datatype_compatible exn hyps ty1 ty2
+  | `Record (f1,pr1), `Record(f2,pr2) -> record_compatible exn hyps f1 pr1 f2 pr2
+  | _, `Concrete {ty_node = Tconstr(p, tys) } ->
+    let ty_body2 = get_open_tydecl hyps p tys in
+    tybody_compatible exn hyps ty_body1 ty_body2
+  | `Concrete{ty_node = Tconstr(p, tys) }, _ ->
+    let ty_body1 = get_open_tydecl hyps p tys in
+    tybody_compatible exn hyps ty_body1 ty_body2
+  | _, _ -> raise exn (* FIXME should we do more for concrete version other *)
+
+let tydecl_compatible env tyd1 tyd2 =
+  let params = tyd1.tyd_params in
+  tparams_compatible params tyd2.tyd_params;
+  let tparams = List.map (fun (id,_) -> tvar id) params in
+  let ty_body1 = tyd1.tyd_type in
+  let ty_body2 = EcSubst.open_tydecl tyd2 tparams in
+  let exn  = Incompatible (TyBody(*tyd1,tyd2*)) in
+  let hyps = EcEnv.LDecl.init env params in
+  match ty_body1, ty_body2 with
+  | `Abstract _, _ -> () (* FIXME Sp.t *)
+  | _, _ -> tybody_compatible exn hyps ty_body1 ty_body2
+
+
+(* -------------------------------------------------------------------- *)
+let expr_compatible exn env s e1 e2 =
+  let f1 = EcFol.form_of_expr EcFol.mhr e1 in
+  let f2 = EcFol.Fsubst.f_subst s (EcFol.form_of_expr EcFol.mhr e2) in
+  error_body exn (EcReduction.is_conv (EcEnv.LDecl.init env []) f1 f2)
+
+let get_open_oper exn env p tys =
+  let oper = EcEnv.Op.by_path p env in
+  let _, okind = EcSubst.open_oper oper tys in
+  match okind with
+  | OB_oper (Some ob) -> ob
+  | _ -> raise exn
+
+let rec oper_compatible exn env ob1 ob2 =
+  match ob1, ob2 with
+  | OP_Plain(e1,_), OP_Plain(e2,_)  ->
+    expr_compatible exn env EcFol.Fsubst.f_subst_id e1 e2
+  | OP_Plain({e_node = Eop(p,tys)},_), _ ->
+    let ob1 = get_open_oper exn env p tys  in
+    oper_compatible exn env ob1 ob2
+  | _, OP_Plain({e_node = Eop(p,tys)}, _) ->
+    let ob2 = get_open_oper exn env p tys in
+    oper_compatible exn env ob1 ob2
+  | OP_Constr(p1,i1), OP_Constr(p2,i2) ->
+    error_body exn (EcPath.p_equal p1 p2 && i1 = i2)
+  | OP_Record p1, OP_Record p2 ->
+    error_body exn (EcPath.p_equal p1 p2)
+  | OP_Proj(p1,i11,i12), OP_Proj(p2,i21,i22) ->
+    error_body exn (EcPath.p_equal p1 p2 && i11 = i21 && i12 = i22)
+  | OP_Fix f1, OP_Fix f2 ->
+    opfix_compatible exn env f1 f2
+  | OP_TC, OP_TC -> ()
+  | _, _ -> raise exn
+
+and opfix_compatible exn env f1 f2 =
+  let s = params_compatible exn env EcFol.Fsubst.f_subst_id f1.opf_args f2.opf_args in
+  error_body exn (EcReduction.EqTest.for_type env f1.opf_resty f2.opf_resty);
+  error_body exn (f1.opf_struct = f2.opf_struct);
+  opbranches_compatible exn env s f1.opf_branches f2.opf_branches
+
+and params_compatible exn env s p1 p2 =
+  error_body exn (List.length p1 = List.length p2);
+  let doit s (id1,ty1) (id2,ty2) =
+    error_body exn (EcReduction.EqTest.for_type env ty1 ty2);
+    EcFol.Fsubst.f_bind_local s id2 (EcFol.f_local id1 ty1) in
+  List.fold_left2 doit s p1 p2
+
+and opbranches_compatible exn env s ob1 ob2 =
+  match ob1, ob2 with
+  | OPB_Leaf(d1,e1), OPB_Leaf(d2,e2) ->
+    error_body exn (List.length d1 = List.length d2);
+    let s =
+      List.fold_left2 (params_compatible exn env) s d1 d2 in
+    expr_compatible exn env s e1 e2
+
+  | OPB_Branch obs1, OPB_Branch obs2 ->
+    error_body exn (Parray.length obs1 = Parray.length obs2);
+    Parray.iter2 (opbranch_compatible exn env s) obs1 obs2
+  | _, _ -> raise exn
+
+and opbranch_compatible exn env s ob1 ob2 =
+  error_body exn (EcPath.p_equal (fst ob1.opb_ctor) (fst ob2.opb_ctor));
+  error_body exn (snd ob1.opb_ctor = snd ob2.opb_ctor);
+  opbranches_compatible exn env s ob1.opb_sub ob2.opb_sub
+
+let get_open_pred exn env p tys =
+  let oper = EcEnv.Op.by_path p env in
+  let _, okind = EcSubst.open_oper oper tys in
+  match okind with
+  | OB_pred (Some pb) -> pb
+  | _ -> raise exn
+
+let rec pred_compatible exn env pb1 pb2 =
+  match pb1, pb2 with
+  | PR_Plain f1, PR_Plain f2 -> error_body exn (EcReduction.is_conv (EcEnv.LDecl.init env []) f1 f2)
+  | PR_Plain {f_node = Fop(p,tys)}, _ ->
+    let pb1 = get_open_pred exn env p tys  in
+    pred_compatible exn env pb1 pb2
+  | _, PR_Plain {f_node = Fop(p,tys)} ->
+    let pb2 = get_open_pred exn env p tys  in
+    pred_compatible exn env pb1 pb2
+  | PR_Ind pr1, PR_Ind pr2 ->
+    ind_compatible exn env pr1 pr2
+  | _, _ -> raise exn
+
+and ind_compatible exn env pi1 pi2 =
+  let s = params_compatible exn env EcFol.Fsubst.f_subst_id pi1.pri_args pi2.pri_args in
+  error_body exn (List.length pi1.pri_ctors = List.length pi2.pri_ctors);
+  List.iter2 (prctor_compatible exn env s) pi1.pri_ctors pi2.pri_ctors
+
+and prctor_compatible exn env s prc1 prc2 =
+  error_body exn (EcSymbols.sym_equal prc1.prc_ctor prc2.prc_ctor);
+  let env, s = EcReduction.check_bindings exn env s prc1.prc_bds prc2.prc_bds in
+  error_body exn (List.length prc1.prc_spec = List.length prc2.prc_spec);
+  let doit f1 f2 =
+    error_body exn (EcReduction.is_conv (EcEnv.LDecl.init env []) f1 (EcFol.Fsubst.f_subst s f2)) in
+  List.iter2 doit prc1.prc_spec prc2.prc_spec
+
+let nott_compatible exn env nb1 nb2 =
+  let s = params_compatible exn env EcFol.Fsubst.f_subst_id nb1.ont_args nb2.ont_args in
+  (* We do not check ont_resty because it is redundant *)
+  expr_compatible exn env s nb1.ont_body nb2.ont_body
+
+let operator_compatible env oper1 oper2 =
+  let open EcDecl in
+  let params = oper1.op_tparams in
+  tparams_compatible oper1.op_tparams oper2.op_tparams;
+  let oty1, okind1 = oper1.op_ty, oper1.op_kind in
+  let tparams = List.map (fun (id,_) -> tvar id) params in
+  let oty2, okind2 = EcSubst.open_oper oper2 tparams in
+  if not (EcReduction.EqTest.for_type env oty1 oty2) then
+    raise (Incompatible (DifferentType(oty1, oty2)));
+  let hyps = EcEnv.LDecl.init env params in
+  let env  = EcEnv.LDecl.toenv hyps in
+  let exn  = Incompatible (OpBody(*oper1,oper2*)) in
+  match okind1, okind2 with
+  | OB_oper None      , OB_oper _          -> ()
+  | OB_oper (Some ob1), OB_oper (Some ob2) -> oper_compatible exn env ob1 ob2
+  | OB_pred None      , OB_pred _          -> ()
+  | OB_pred (Some pb1), OB_pred (Some pb2) -> pred_compatible exn env pb1 pb2
+  | OB_nott nb1       , OB_nott nb2        -> nott_compatible exn env nb1 nb2
+  | _                 , _                  -> raise exn
 
 (* -------------------------------------------------------------------- *)
 let check_evtags (tags : evtags) (src : symbol list) =
@@ -182,12 +365,10 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
           end
       in
 
-      match mode with
-      | `Alias ->
-          let subst, x = rename ove subst (`Type, x) in
-          (subst, ops, proofs, ove.ovre_hooks.hty scope (x, newtyd))
-
-      | `Inline ->
+      let subst, x =
+        match mode with
+        | `Alias -> rename ove subst (`Type, x)
+        | `Inline ->
           let subst =
             EcSubst.add_tydef
               subst (xpath ove x) (List.map fst newtyd.tyd_params, body) in
@@ -198,22 +379,30 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
             | `Datatype { tydt_ctors = octors }, Tconstr (np, _) -> begin
                 match (EcEnv.Ty.by_path np scenv).tyd_type with
                 | `Datatype { tydt_ctors = _ } ->
-                    List.fold_left (fun subst (name, _) ->
+                  List.fold_left (fun subst (name, _) ->
                       EcSubst.add_path subst
                         ~src:(xpath ove name)
                         ~dst:(EcPath.pqoname (EcPath.prefix np) name))
-                      subst octors
+                    subst octors
                 | _ -> subst
               end
             | _, _ -> subst
 
-          in (subst, ops, proofs, ove.ovre_hooks.hty scope (x, newtyd))
+          in
+          subst, x in
+      let refotyd = EcSubst.subst_tydecl subst otyd in
+      begin
+        try tydecl_compatible scenv refotyd newtyd
+        with Incompatible err ->
+          clone_error scenv (CE_TyIncompatible ((snd ove.ovre_prefix, x), err))
+      end;
+
+      (subst, ops, proofs, ove.ovre_hooks.hty scope (x, newtyd))
   end
 
 (* -------------------------------------------------------------------- *)
 and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
   let scenv = ove.ovre_hooks.henv scope in
-
   match Msym.find_opt x ove.ovre_ovrd.evc_ops with
   | None ->
       let (subst, x) = rename ove subst (`Op, x) in
@@ -230,10 +419,9 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
           ove.ovre_hooks.herr ~loc
           ("operator overriding with nosmt only makes sense with alias mode");
 
-      let (reftyvars, refty) =
-        let refop = EcSubst.subst_op subst oopd in
-        (refop.op_tparams, refop.op_ty)
-      in
+
+      let refop = EcSubst.subst_op subst oopd in
+      let (reftyvars, refty) = (refop.op_tparams, refop.op_ty) in
 
       let (newop, subst, x, alias) =
         let newop, body =
@@ -282,7 +470,7 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
                       op_resolve = oopd.op_resolve && opmode = `Alias; } in
                 (decl, body)
 
-            | _ -> assert false
+            | _ -> assert false (* FIXME error message *)
           end
         in
 
@@ -300,8 +488,14 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
       let ops =
         let opp = EcPath.fromqsymbol (snd ove.ovre_prefix, x) in
         Mp.add opp (newop, alias) ops in
-      let scope =
-        (*if alias then*) ove.ovre_hooks.hop scope (x, newop) (*else scope*)
+
+      begin
+        try operator_compatible scenv refop newop
+        with Incompatible err ->
+          clone_error scenv (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
+      end;
+
+      let scope = ove.ovre_hooks.hop scope (x, newop)
 
       in (subst, ops, proofs, scope)
 
@@ -316,10 +510,10 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
       (subst, ops, proofs, ove.ovre_hooks.hop scope (x, oopr))
 
   | Some { pl_desc = (prov, prmode); pl_loc = loc; } ->
-      let (reftyvars, refty) =
-        let refpr = EcSubst.subst_op subst oopr in
-          (refpr.op_tparams, refpr.op_ty)
-      in
+    let refpr = EcSubst.subst_op subst oopr in
+    let (reftyvars, refty) =
+      (refpr.op_tparams, refpr.op_ty)
+    in
 
       let (newpr, subst, x, alias) =
         let newpr, body =
@@ -385,8 +579,12 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
 
       in
 
-      let scope =
-        (*if alias then*) ove.ovre_hooks.hop scope (x, newpr) (*else scope*)
+      begin
+        try operator_compatible scenv refpr newpr
+        with Incompatible err ->
+          clone_error scenv (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
+      end;
+      let scope = ove.ovre_hooks.hop scope (x, newpr)
       in (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
@@ -459,7 +657,7 @@ and replay_modtype
       let newmt = snd (EcEnv.ModTy.lookup newname env) in (* FIXME *)
 
       if not (EcReduction.EqTest.for_module_sig env modty newmt) then
-        assert false;           (* FIXME *)
+        clone_error env (CE_ModTyIncompatible (snd ove.ovre_prefix, x));
       (subst, ops, proofs, ove.ovre_hooks.hmodty scope (name, newmt))
 
 (* -------------------------------------------------------------------- *)
@@ -482,7 +680,7 @@ and replay_mod
       let newme = { newme with me_name = name; } in
 
       if not (EcReduction.EqTest.for_module_expr env me newme) then
-        assert false;           (* FIXME *)
+        clone_error env (CE_ModIncompatible (snd ove.ovre_prefix, name));
       (subst, ops, proofs, ove.ovre_hooks.hmod scope ove.ovre_local newme)
 
 (* -------------------------------------------------------------------- *)

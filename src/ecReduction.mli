@@ -102,7 +102,13 @@ val simplify : reduction_info -> LDecl.hyps -> form -> form
 val is_conv    : LDecl.hyps -> form -> form -> bool
 val check_conv : LDecl.hyps -> form -> form -> unit
 
+val check_bindings :
+  exn -> EcEnv.env -> EcFol.f_subst ->
+  (EcIdent.t * EcFol.gty) list -> (EcIdent.t * EcFol.gty) list ->
+  EcEnv.env * EcFol.f_subst
 (* -------------------------------------------------------------------- *)
 type xconv = [`Eq | `AlphaEq | `Conv]
 
 val xconv : xconv -> LDecl.hyps -> form -> form -> bool
+
+(* -------------------------------------------------------------------- *)

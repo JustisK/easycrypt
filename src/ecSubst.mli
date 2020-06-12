@@ -62,3 +62,7 @@ val subst_modsig_body  : subst -> module_sig_body -> module_sig_body
 val subst_genty : subst -> (ty_params * ty) -> (ty_params * ty)
 val subst_ty    : subst -> ty   -> ty
 val subst_form  : subst -> form -> form
+
+(* -------------------------------------------------------------------- *)
+val open_oper : operator -> ty list -> ty * operator_kind
+val open_tydecl : tydecl -> ty list -> ty_body
