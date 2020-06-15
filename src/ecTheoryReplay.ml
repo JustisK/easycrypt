@@ -61,6 +61,9 @@ and 'a ovrhooks = {
 let is_inline_mode (mode : clmode) =
   match mode with `Inline _ -> true | `Alias -> false
 
+let keep_of_mode (mode : clmode) =
+  match mode with `Inline `Keep | `Alias -> true | `Inline `Clear -> false
+
 (* -------------------------------------------------------------------- *)
 exception Incompatible of incompatible
 
@@ -372,7 +375,7 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
       let subst, x =
         match mode with
         | `Alias -> rename ove subst (`Type, x)
-        | `Inline keep ->
+        | `Inline _ ->
           let subst =
             EcSubst.add_tydef
               subst (xpath ove x) (List.map fst newtyd.tyd_params, body) in
@@ -403,7 +406,12 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
           clone_error scenv (CE_TyIncompatible ((snd ove.ovre_prefix, x), err))
       end;
 
-      (subst, ops, proofs, ove.ovre_hooks.hty scope (x, newtyd))
+      let scope =
+        if   keep_of_mode mode
+        then ove.ovre_hooks.hty scope (x, newtyd)
+        else scope in
+
+      (subst, ops, proofs, scope)
   end
 
 (* -------------------------------------------------------------------- *)
@@ -485,7 +493,7 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
               let subst, x = rename ove subst (`Op, x) in
               (newop, subst, x, true)
 
-          | `Inline keep ->
+          | `Inline _ ->
               let subst1 = (List.map fst newop.op_tparams, body) in
               let subst  = EcSubst.add_opdef subst (xpath ove x) subst1
               in  (newop, subst, x, false)
@@ -501,9 +509,12 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
           clone_error scenv (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
       end;
 
-      let scope = ove.ovre_hooks.hop scope (x, newop)
+      let scope =
+        if   keep_of_mode opmode
+        then ove.ovre_hooks.hop scope (x, newop)
+        else scope in
 
-      in (subst, ops, proofs, scope)
+      (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
 and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
@@ -521,7 +532,7 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
       (refpr.op_tparams, refpr.op_ty)
     in
 
-      let (newpr, subst, x, alias) =
+      let (newpr, subst, x) =
         let newpr, body =
           match prov with
           | `BySyntax prov ->
@@ -576,12 +587,12 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
           match prmode with
           | `Alias ->
             let subst, x = rename ove subst (`Pred, x) in
-            (newpr, subst, x, true)
+            (newpr, subst, x)
 
-          | `Inline keep ->
+          | `Inline _ ->
               let subst1 = (List.map fst newpr.op_tparams, body) in
-              let subst  = EcSubst.add_pddef subst (xpath ove x) subst1
-              in (newpr, subst, x, false)
+              let subst  = EcSubst.add_pddef subst (xpath ove x) subst1 in
+              (newpr, subst, x)
 
       in
 
@@ -590,8 +601,12 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
         with Incompatible err ->
           clone_error scenv (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
       end;
-      let scope = ove.ovre_hooks.hop scope (x, newpr)
-      in (subst, ops, proofs, scope)
+      let scope =
+        if   keep_of_mode prmode
+        then ove.ovre_hooks.hop scope (x, newpr)
+        else scope in
+
+      (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
 and replay_ntd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oont) =
@@ -664,7 +679,13 @@ and replay_modtype
 
       if not (EcReduction.EqTest.for_module_sig env modty newmt) then
         clone_error env (CE_ModTyIncompatible (snd ove.ovre_prefix, x));
-      (subst, ops, proofs, ove.ovre_hooks.hmodty scope (name, newmt))
+
+      let scope =
+        if   keep_of_mode mode
+        then ove.ovre_hooks.hmodty scope (name, newmt)
+        else scope in
+
+      (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
 and replay_mod
@@ -687,7 +708,13 @@ and replay_mod
 
       if not (EcReduction.EqTest.for_module_expr env me newme) then
         clone_error env (CE_ModIncompatible (snd ove.ovre_prefix, name));
-      (subst, ops, proofs, ove.ovre_hooks.hmod scope ove.ovre_local newme)
+
+      let scope =
+        if   keep_of_mode mode
+        then ove.ovre_hooks.hmod scope ove.ovre_local newme
+        else scope in
+
+      (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
 and replay_export

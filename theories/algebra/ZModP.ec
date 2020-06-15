@@ -214,7 +214,7 @@ abstract theory ZModField.
 const p : { int | prime p } as prime_p.
 
 clone include ZModRing with
-  op    p <- p
+  op    p <<- p
   proof ge2_p by smt(gt1_prime prime_p).
 
 lemma unitE (x : zmod) : (unit x) <=> (x <> zero).
