@@ -278,7 +278,7 @@ qed.
 lemma nosmt eq_big_perm_map (F : 'a -> t) s1 s2:
   perm_eq (map F s1) (map F s2) => big predT F s1 = big predT F s2.
 proof.
-by move=> peq; rewrite -!(@big_map F predT idfun) &(eq_big_perm).
+move=> peq; rewrite -!(@big_map F predT idfun) &(eq_big_perm).
 qed.
 
 (* -------------------------------------------------------------------- *)

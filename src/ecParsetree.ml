@@ -1024,12 +1024,14 @@ and theory_override =
 | PTHO_Pred   of pr_override
 | PTHO_Theory of th_override
 
-and ty_override = ty_override_def genoverride * [`Alias | `Inline]
-and op_override = op_override_def genoverride * [`Alias | `Inline]
-and pr_override = pr_override_def genoverride * [`Alias | `Inline]
-and me_override = symbol list * symbol
-and mt_override = symbol list * symbol
-and th_override = pqsymbol
+and ty_override = ty_override_def genoverride * clmode
+and op_override = op_override_def genoverride * clmode
+and pr_override = pr_override_def genoverride * clmode
+and me_override = (symbol list * symbol) * clmode
+and mt_override = (symbol list * symbol) * clmode
+and th_override = pqsymbol * clmode
+
+and clmode = [`Alias | `Inline of [`Keep | `Clear]]
 
 and 'a genoverride = [
 | `ByPath   of EcPath.path

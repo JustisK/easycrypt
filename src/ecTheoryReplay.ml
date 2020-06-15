@@ -58,6 +58,10 @@ and 'a ovrhooks = {
 }
 
 (* -------------------------------------------------------------------- *)
+let is_inline_mode (mode : clmode) =
+  match mode with `Inline _ -> true | `Alias -> false
+
+(* -------------------------------------------------------------------- *)
 exception Incompatible of incompatible
 
 let tparams_compatible rtyvars ntyvars =
@@ -368,7 +372,7 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
       let subst, x =
         match mode with
         | `Alias -> rename ove subst (`Type, x)
-        | `Inline ->
+        | `Inline keep ->
           let subst =
             EcSubst.add_tydef
               subst (xpath ove x) (List.map fst newtyd.tyd_params, body) in
@@ -390,7 +394,9 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
 
           in
           subst, x in
+
       let refotyd = EcSubst.subst_tydecl subst otyd in
+
       begin
         try tydecl_compatible scenv refotyd newtyd
         with Incompatible err ->
@@ -415,7 +421,7 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
         | `BySyntax opov -> opov.opov_nosmt
         | `ByPath   _    -> false in
 
-      if nosmt && opmode = `Inline then
+      if nosmt && is_inline_mode opmode then
           ove.ovre_hooks.herr ~loc
           ("operator overriding with nosmt only makes sense with alias mode");
 
@@ -479,7 +485,7 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
               let subst, x = rename ove subst (`Op, x) in
               (newop, subst, x, true)
 
-          | `Inline ->
+          | `Inline keep ->
               let subst1 = (List.map fst newop.op_tparams, body) in
               let subst  = EcSubst.add_opdef subst (xpath ove x) subst1
               in  (newop, subst, x, false)
@@ -572,7 +578,7 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
             let subst, x = rename ove subst (`Pred, x) in
             (newpr, subst, x, true)
 
-          | `Inline ->
+          | `Inline keep ->
               let subst1 = (List.map fst newpr.op_tparams, body) in
               let subst  = EcSubst.add_pddef subst (xpath ove x) subst1
               in (newpr, subst, x, false)
@@ -650,7 +656,7 @@ and replay_modtype
       let modty = EcSubst.subst_modsig subst modty in
       (subst, ops, proofs, ove.ovre_hooks.hmodty scope (x, modty))
 
-  | Some { pl_desc = newname } ->
+  | Some { pl_desc = (newname, mode) } ->
       let subst, name = rename ove subst (`Module, x) in
       let modty = EcSubst.subst_modsig subst modty in
       let env   = ove.ovre_hooks.henv scope in
@@ -671,7 +677,7 @@ and replay_mod
       let me = { me with me_name = name } in
       (subst, ops, proofs, ove.ovre_hooks.hmod scope ove.ovre_local me)
 
-  | Some { pl_desc = newname } ->
+  | Some { pl_desc = (newname, mode) } ->
       let subst, name = rename ove subst (`Module, me.me_name) in
       let me    = EcSubst.subst_module subst me in
       let me    = { me with me_name = name; } in
