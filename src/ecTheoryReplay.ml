@@ -470,7 +470,7 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
                       op_resolve = oopd.op_resolve && opmode = `Alias; } in
                 (decl, body)
 
-            | _ -> assert false (* FIXME error message *)
+            | _ -> clone_error scenv (CE_UnkOverride(OVK_Operator, EcPath.toqsymbol p))
           end
         in
 
@@ -563,7 +563,7 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
                     op_kind    = OB_pred (Some (PR_Plain body));
                     op_resolve = oopr.op_resolve && (prmode = `Alias); }, body
 
-            | _ -> assert false
+            | _ -> clone_error scenv (CE_UnkOverride(OVK_Predicate, EcPath.toqsymbol p))
           end
         in
 
