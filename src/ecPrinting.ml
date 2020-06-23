@@ -2839,9 +2839,10 @@ let rec pp_theory ppe (fmt : Format.formatter) (path, (cth, mode)) =
     | `Concrete -> "theory"
   in
 
-  let filter_item = function
-  | EcTheory.CTh_axiom (_, ax) when ax.ax_visibility = `Hidden -> false
-  | _ -> true in
+  let filter_item item =
+    match item.EcTheory.cti_item with
+    | EcTheory.CTh_axiom (_, ax) when ax.ax_visibility = `Hidden -> false
+    | _ -> true in
 
   Format.fprintf fmt "@[<v>%a%s %s.@,  @[<v>%a@]@,end %s.@]"
     pp_clone cth.EcTheory.cth_desc
@@ -2850,7 +2851,8 @@ let rec pp_theory ppe (fmt : Format.formatter) (path, (cth, mode)) =
     (List.filter filter_item cth.EcTheory.cth_struct)
     basename
 
- and pp_th_item ppe p fmt = function
+ and pp_th_item ppe p fmt item =
+  match item.cti_item with
   | EcTheory.CTh_type (id, ty) ->
       pp_typedecl ppe fmt (EcPath.pqname p id,ty)
 

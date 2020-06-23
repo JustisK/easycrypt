@@ -131,7 +131,6 @@ type operator = {
   op_tparams : ty_params;
   op_ty      : EcTypes.ty;
   op_kind    : operator_kind;
-  op_resolve : bool;
 }
 
 (* -------------------------------------------------------------------- *)
@@ -192,20 +191,19 @@ let is_prind op =
   | OB_pred (Some (PR_Ind _)) -> true
   | _ -> false
 
-let gen_op ?(resolve = true) tparams ty kind = {
+let gen_op tparams ty kind = {
   op_tparams = tparams;
   op_ty      = ty;
   op_kind    = kind;
-  op_resolve = resolve;
 }
 
-let mk_pred ?resolve tparams dom body =
+let mk_pred tparams dom body =
   let kind = OB_pred body in
-  gen_op ?resolve tparams (EcTypes.toarrow dom EcTypes.tbool) kind
+  gen_op tparams (EcTypes.toarrow dom EcTypes.tbool) kind
 
-let mk_op ?resolve tparams ty body =
+let mk_op tparams ty body =
   let kind = OB_oper body in
-  gen_op ?resolve tparams ty kind
+  gen_op tparams ty kind
 
 let mk_abbrev ?(ponly = false) tparams xs (codom, body) =
   let kind = {

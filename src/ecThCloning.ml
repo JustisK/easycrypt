@@ -113,7 +113,7 @@ let find_mc =
     let test = function
       | CTh_theory (x, (sub, _)) when x = nm -> Some sub.cth_struct
       | _ -> None
-    in List.opick test cth
+    in List.opick (fun item -> test item.cti_item) cth
   in
 
   let rec doit nm cth =
@@ -128,35 +128,35 @@ let find_type cth (nm, x) =
   let test = function
     | CTh_type (xty, ty) when xty = x -> Some ty
     | _ -> None
-  in find_mc cth.cth_struct nm |> obind (List.opick test)
+  in find_mc cth.cth_struct nm |> obind (List.opick (fun item -> test item.cti_item))
 
 (* -------------------------------------------------------------------- *)
 let find_theory cth (nm, x) =
   let test = function
     | CTh_theory (xth, th) when xth = x -> Some th
     | _ -> None
-  in find_mc cth.cth_struct nm |> obind (List.opick test)
+  in find_mc cth.cth_struct nm |> obind (List.opick (fun item -> test item.cti_item))
 
 (* -------------------------------------------------------------------- *)
 let find_op cth (nm, x) =
   let test = function
     | CTh_operator (xop, op) when xop = x && EcDecl.is_oper op -> Some op
     | _ -> None
-  in find_mc cth.cth_struct nm |> obind (List.opick test)
+  in find_mc cth.cth_struct nm |> obind (List.opick (fun item -> test item.cti_item))
 
 (* -------------------------------------------------------------------- *)
 let find_pr cth (nm, x) =
   let test = function
     | CTh_operator (xpr, pr) when xpr = x && EcDecl.is_pred pr -> Some pr
     | _ -> None
-  in find_mc cth.cth_struct nm |> obind (List.opick test)
+  in find_mc cth.cth_struct nm |> obind (List.opick (fun item -> test item.cti_item))
 
 (* -------------------------------------------------------------------- *)
 let find_ax cth (nm, x) =
   let test = function
     | CTh_axiom (xax, ax) when xax = x -> Some ax
     | _ -> None
-  in find_mc cth.cth_struct nm |> obind (List.opick test)
+  in find_mc cth.cth_struct nm |> obind (List.opick (fun item -> test item.cti_item))
 
 (* -------------------------------------------------------------------- *)
 let find_nt cth (nm, x) =
@@ -164,7 +164,7 @@ let find_nt cth (nm, x) =
     | CTh_operator (xop, op) when xop = x && EcDecl.is_abbrev op ->
        Some op
     | _ -> None
-  in find_mc cth.cth_struct nm |> obind (List.opick test)
+  in find_mc cth.cth_struct nm |> obind (List.opick (fun item -> test item.cti_item))
 
 (* -------------------------------------------------------------------- *)
 let find_modexpr cth (nm, x) =
@@ -172,7 +172,7 @@ let find_modexpr cth (nm, x) =
     | CTh_module me when me.me_name = x ->
        Some me
     | _ -> None
-  in find_mc cth.cth_struct nm |> obind (List.opick test)
+  in find_mc cth.cth_struct nm |> obind (List.opick (fun item -> test item.cti_item))
 
 (* -------------------------------------------------------------------- *)
 let find_modtype cth (nm, x) =
@@ -180,7 +180,7 @@ let find_modtype cth (nm, x) =
     | CTh_modtype (mtx, mt) when mtx = x ->
        Some mt
     | _ -> None
-  in find_mc cth.cth_struct nm |> obind (List.opick test)
+  in find_mc cth.cth_struct nm |> obind (List.opick (fun item -> test item.cti_item))
 
 (* -------------------------------------------------------------------- *)
 type clone = {
@@ -383,7 +383,7 @@ end = struct
     let thd  = let thd = EcPath.toqsymbol sp in (fst thd @ [snd thd]) in
     let xdth = nm @ [x] in
 
-    let rec doit prefix (proofs, evc) dth =
+    let rec doit_r prefix (proofs, evc) dth =
       match dth with
       | CTh_type (x, _) ->
          let ovrd = `ByPath (EcPath.fromqsymbol (thd @ prefix, x)) in
@@ -443,6 +443,9 @@ end = struct
       | CTh_addrw  _     -> (proofs, evc)
       | CTh_reduction _  -> (proofs, evc)
       | CTh_auto _       -> (proofs, evc)
+
+    and doit prefix (proofs, evc) dth =
+      doit_r prefix (proofs, evc) dth.cti_item
 
     in List.fold_left (doit []) (proofs, evc) dth.cth_struct
 

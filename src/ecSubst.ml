@@ -410,7 +410,6 @@ and subst_pr_body (s : _subst) (bd : prbody) =
       in PR_Ind { pri_args = args; pri_ctors = ctors; }
 
 (* -------------------------------------------------------------------- *)
-
 let open_oper (s:_subst) (op:operator) tys =
   let sty  = add_tparams s op.op_tparams tys in
   let ty   = sty.s_ty op.op_ty in
@@ -423,9 +422,7 @@ let subst_op (s : _subst) (op : operator) =
   let ty, kind = open_oper s op tys in
   { op_tparams = tparams      ;
     op_ty      = ty           ;
-    op_kind    = kind         ;
-    op_resolve = op.op_resolve; }
-
+    op_kind    = kind         ; }
 
 (* -------------------------------------------------------------------- *)
 let subst_ax (s : _subst) (ax : axiom) =
@@ -479,7 +476,7 @@ let subst_tc (s : _subst) tc =
 
 (* -------------------------------------------------------------------- *)
 (* SUBSTITUTION OVER THEORIES *)
-let rec subst_theory_item (s : _subst) (item : theory_item) =
+let rec subst_theory_item_r (s : _subst) (item : theory_item_r) =
   match item with
   | Th_type (x, tydecl) ->
       Th_type (x, subst_tydecl s tydecl)
@@ -523,11 +520,16 @@ let rec subst_theory_item (s : _subst) (item : theory_item) =
       Th_auto (lc, lvl, base, List.map s.s_p ps)
 
 (* -------------------------------------------------------------------- *)
+and subst_theory_item (s : _subst) (item : theory_item) =
+  { ti_item   = subst_theory_item_r s item.ti_item;
+    ti_import = item.ti_import; }
+
+(* -------------------------------------------------------------------- *)
 and subst_theory (s : _subst) (items : theory) =
   List.map (subst_theory_item s) items
 
 (* -------------------------------------------------------------------- *)
-and subst_ctheory_item (s : _subst) (item : ctheory_item) =
+and subst_ctheory_item_r (s : _subst) (item : ctheory_item_r) =
   match item with
   | CTh_type (x, ty) ->
       CTh_type (x, subst_tydecl s ty)
@@ -569,6 +571,11 @@ and subst_ctheory_item (s : _subst) (item : ctheory_item) =
 
   | CTh_auto (lc, lvl, base, ps) ->
       CTh_auto (lc, lvl, base, List.map s.s_p ps)
+
+(* -------------------------------------------------------------------- *)
+and subst_ctheory_item (s : _subst) (item : ctheory_item) =
+  { cti_item   = subst_ctheory_item_r s item.cti_item;
+    cti_import = item.cti_import; }
 
 (* -------------------------------------------------------------------- *)
 and subst_ctheory_struct (s : _subst) (th : ctheory_struct) =

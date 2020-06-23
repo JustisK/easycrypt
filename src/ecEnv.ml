@@ -83,6 +83,12 @@ let ippath_as_path (ip : ipath) =
   match ip with IPPath p -> p | _ -> assert false
 
 (* -------------------------------------------------------------------- *)
+type import = { im_immediate : bool; im_atimport : bool; }
+
+let import0  = { im_immediate =  true; im_atimport =  true; }
+let noimport = { im_immediate = false; im_atimport = false; }
+
+(* -------------------------------------------------------------------- *)
 type varbind = {
   vb_type  : EcTypes.ty;
   vb_kind  : [`Var of EcTypes.pvar_kind | `Proj of int];
@@ -1025,7 +1031,8 @@ module MC = struct
       up false mc name (IPPath (expath name), obj)
     in
 
-    let mc1_of_ctheory (mc : mc) = function
+    let mc1_of_ctheory (mc : mc) (item : ctheory_item) =
+      match item.cti_item with
       | CTh_type (xtydecl, tydecl) ->
           (add2mc _up_tydecl xtydecl tydecl mc, None)
 
@@ -1295,9 +1302,10 @@ module TypeClass = struct
           let myself = EcPath.pqname (root env) name in
             { env with env_tc = TC.Graph.add ~src:myself ~dst:prt env.env_tc }
 
-  let bind name tc env =
-    { (rebind name tc env) with
-        env_item = CTh_typeclass (name, tc) :: env.env_item }
+  let bind ?(import = import0) name tc env =
+    let env = if import.im_immediate then rebind name tc env else env in
+    { env with
+        env_item = mk_citem import.im_atimport (CTh_typeclass (name, tc)) :: env.env_item }
 
   let lookup qname (env : env) =
     MC.lookup_typeclass qname env
@@ -1314,10 +1322,13 @@ module TypeClass = struct
   let bind_instance ty cr tci =
     (ty, cr) :: tci
 
-  let add_instance ty cr env =
+  let add_instance ?(import = import0) ty cr env =
+    let env =
+      if import.im_immediate then
+        { env with env_tci = bind_instance ty cr env.env_tci }
+      else env in
     { env with
-        env_tci  = bind_instance ty cr env.env_tci;
-        env_item = CTh_instance (ty, cr) :: env.env_item; }
+        env_item = mk_citem import.im_atimport (CTh_instance (ty, cr)) :: env.env_item; }
 
   let get_instances env = env.env_tci
 end
@@ -1348,21 +1359,27 @@ module BaseRw = struct
     | None -> false
     | Some _ -> true
 
-  let add name env =
+  let add ?(import = import0) name env =
     let p   = EcPath.pqname (root env) name in
-    let env = MC.bind_rwbase name p env in
+    let env = if import.im_immediate then MC.bind_rwbase name p env else env in
     let ip  = IPPath p in
     { env with
         env_rwbase = Mip.add ip Sp.empty env.env_rwbase;
-        env_item   = CTh_baserw name :: env.env_item; }
+        env_item   = mk_citem import.im_atimport (CTh_baserw name) :: env.env_item; }
 
-  let addto p l env =
+  let addto ?(import = import0) p l env =
+    let env =
+      if import.im_immediate then
+        { env with
+            env_rwbase =
+              Mip.change
+                (omap (fun s -> List.fold_left (fun s r -> Sp.add r s) s l))
+                (IPPath p) env.env_rwbase }
+      else env
+    in
+
     { env with
-        env_rwbase =
-          Mip.change
-            (omap (fun s -> List.fold_left (fun s r -> Sp.add r s) s l))
-            (IPPath p) env.env_rwbase;
-        env_item = CTh_addrw (p, l) :: env.env_item; }
+        env_item = mk_citem import.im_atimport (CTh_addrw (p, l)) :: env.env_item; }
 
 end
 
@@ -1398,11 +1415,15 @@ module Reduction = struct
   let add_rules (rules : (path * rule option) list) (db : mredinfo) =
     List.fold_left ((^~) add_rule) db rules
 
-  let add (rules : (path * rule_option * rule option) list) (env : env) =
+  let add ?(import = import0) (rules : (path * rule_option * rule option) list) (env : env) =
     let rstrip = List.map (fun (x, _, y) -> (x, y)) rules in
+    let env =
+      if import.im_immediate then
+        { env with env_redbase = add_rules rstrip env.env_redbase; }
+      else env in
+
     { env with
-        env_redbase = add_rules rstrip env.env_redbase;
-        env_item    = CTh_reduction rules :: env.env_item; }
+        env_item = mk_citem import.im_atimport (CTh_reduction rules) :: env.env_item; }
 
   let add1 (prule : path * rule_option * rule option) (env : env) =
     add [prule] env
@@ -1425,10 +1446,16 @@ module Auto = struct
       Mint.change doit level ps' in
     Msym.add nbase ps' db
 
-  let add ~local ~level ?base (ps : path list) (env : env) =
+  let add ?(import = import0) ~local ~level ?base (ps : path list) (env : env) =
+    let env =
+      if import.im_immediate then
+        { env with
+            env_atbase = updatedb ?base ~level ps env.env_atbase; }
+      else env in
+
     { env with
-        env_atbase = updatedb ?base ~level ps env.env_atbase;
-        env_item   = CTh_auto (local, level, base, ps) :: env.env_item; }
+        env_item = mk_citem import.im_atimport
+            (CTh_auto (local, level, base, ps)) :: env.env_item; }
 
   let add1 ~local ~level ?base (p : path) (env : env) =
     add ~local ?base ~level [p] env
@@ -1550,9 +1577,11 @@ module Ty = struct
 
     | _ -> env
 
-  let bind name ty env =
-    { (rebind name ty env) with
-         env_item = CTh_type (name, ty) :: env.env_item; }
+  let bind ?(import = import0) name ty env =
+    let env = if import.im_immediate then rebind name ty env else env in
+
+    { env with env_item =
+        mk_citem import.im_atimport (CTh_type (name, ty)) :: env.env_item }
 end
 
 (* -------------------------------------------------------------------- *)
@@ -1973,9 +2002,10 @@ module Mod = struct
   let lookup_path name env =
     fst (lookup name env)
 
-  let bind name me env =
-    { (MC.bind_mod name me env) with
-          env_item = CTh_module me :: env.env_item;
+  let bind ?(import = import0) name me env =
+    let env = if import.im_immediate then MC.bind_mod name me env else env in
+    { env with
+          env_item = mk_citem import.im_atimport (CTh_module me) :: env.env_item;
           env_norm = ref !(env.env_norm); }
 
   let me_of_mt env name modty restr =
@@ -2483,10 +2513,10 @@ module ModTy = struct
   let lookup_path name env =
     fst (lookup name env)
 
-  let bind name modty env =
-    let env = MC.bind_modty name modty env in
+  let bind ?(import = import0) name modty env =
+    let env = if import.im_immediate then MC.bind_modty name modty env else env in
       { env with
-          env_item = CTh_modtype (name, modty) :: env.env_item }
+          env_item = mk_citem import.im_atimport (CTh_modtype (name, modty)) :: env.env_item }
 
   exception ModTypeNotEquiv
 
@@ -2574,8 +2604,8 @@ module Op = struct
   let lookup_path name env =
     fst (lookup name env)
 
-  let bind name op env =
-    let env = MC.bind_operator name op env in
+  let bind ?(import = import0) name op env =
+    let env = if import.im_immediate then MC.bind_operator name op env else env in
     let op  = NormMp.norm_op env op in
     let nt  =
       match op.op_kind with
@@ -2586,14 +2616,14 @@ module Op = struct
 
     { env with
         env_ntbase = ofold List.cons env.env_ntbase nt;
-        env_item   = CTh_operator(name, op) :: env.env_item; }
+        env_item   = mk_citem import.im_atimport (CTh_operator(name, op)) :: env.env_item; }
 
   let rebind name op env =
     MC.bind_operator name op env
 
-  let all ?(hidden = false) ?(check = fun _ -> true) (qname : qsymbol) (env : env) =
+  let all ?(check = fun _ -> true) (qname : qsymbol) (env : env) =
     let ops = MC.lookup_operators qname env in
-    let check (_, op) = (hidden || op.op_resolve) && check op in
+    let check (_, op) = check op in
     List.filter check ops
 
   let reducible env p =
@@ -2689,10 +2719,10 @@ module Ax = struct
   let lookup_path name env =
     fst (lookup name env)
 
-  let bind name ax env =
+  let bind ?(import = import0) name ax env =
     let ax = NormMp.norm_ax env ax in
     let env = MC.bind_axiom name ax env in
-    { env with env_item = CTh_axiom (name, ax) :: env.env_item }
+    { env with env_item = mk_citem import.im_atimport (CTh_axiom (name, ax)) :: env.env_item }
 
   let rebind name ax env =
     MC.bind_axiom name ax env
@@ -2763,7 +2793,11 @@ module Theory = struct
         let items = List.map ctheory_item_of_theory_item th in
           { cth_desc = CTh_struct items; cth_struct = items; }
 
-  and ctheory_item_of_theory_item = function
+  and ctheory_item_of_theory_item (item : theory_item) =
+    { cti_import = item.ti_import;
+      cti_item   = ctheory_item_of_theory_item_r item.ti_item; }
+
+  and ctheory_item_of_theory_item_r = function
     | Th_type      (x, ty)  -> CTh_type      (x, ty)
     | Th_operator  (x, op)  -> CTh_operator  (x, op)
     | Th_axiom     (x, ax)  -> CTh_axiom     (x, ax)
@@ -2820,9 +2854,11 @@ module Theory = struct
     List.fold_left (bind_instance_cth_item path) inst cth.cth_struct
 
   and bind_instance_cth_item path inst item =
+    if not item.cti_import then inst else
+
     let xpath x = EcPath.pqname path x in
 
-    match item with
+    match item.cti_item with
     | CTh_instance (ty, k) ->
         TypeClass.bind_instance ty k inst
 
@@ -2850,14 +2886,16 @@ module Theory = struct
     List.fold_left (bind_base_cth_item tx path) base cth.cth_struct
 
   and bind_base_cth_item tx path base item =
+    if not item.cti_import then base else
+
     let xpath x = EcPath.pqname path x in
 
-    match item with
+    match item.cti_item with
     | CTh_theory (x, (cth, `Concrete)) ->
         bind_base_cth tx (xpath x) base cth
     | CTh_theory _ ->
         base
-    | _ -> odfl base (tx path base item)
+    | _ -> odfl base (tx path base item.cti_item)
 
   (* ------------------------------------------------------------------ *)
   let bind_tc_cth =
@@ -2918,14 +2956,15 @@ module Theory = struct
     in bind_base_cth for1
 
   (* ------------------------------------------------------------------ *)
-  let bind ?(mode = `Concrete) name cth env =
+  let bind ?(import = import0) ?(mode = `Concrete) name cth env =
     let th = (cth, mode) in
 
     let env = MC.bind_theory name th env in
-    let env = { env with env_item = (CTh_theory (name, th)) :: env.env_item } in
+    let env = { env with env_item =
+      mk_citem import.im_atimport (CTh_theory (name, th)) :: env.env_item } in
 
-    match mode with
-    | `Concrete ->
+    match import, mode with
+    | _, `Concrete ->
         let thname      = EcPath.pqname (root env) name in
         let env_tci     = bind_instance_cth thname env.env_tci cth in
         let env_tc      = bind_tc_cth thname env.env_tc cth in
@@ -2935,7 +2974,7 @@ module Theory = struct
         let env_redbase = bind_rd_cth thname env.env_redbase cth in
         { env with env_tci; env_tc; env_rwbase; env_atbase; env_ntbase; env_redbase; }
 
-    | `Abstract ->
+    | _, _ ->
         env
 
   (* ------------------------------------------------------------------ *)
@@ -2946,16 +2985,17 @@ module Theory = struct
   let import (path : EcPath.path) (env : env) =
     let rec import (env : env) path (cth : ctheory) =
       let xpath x = EcPath.pqname path x in
-      let rec import_cth_item (env : env) = function
+      let rec import_cth_item (env : env) (item : ctheory_item) =
+        if not item.cti_import then env else
+
+        match item.cti_item with
         | CTh_type (x, ty) ->
             if   ty.tyd_resolve
             then MC.import_tydecl (xpath x) ty env
             else env
 
         | CTh_operator (x, op) ->
-            if   op.op_resolve
-            then MC.import_operator (xpath x) op env
-            else env
+            MC.import_operator (xpath x) op env
 
         | CTh_axiom (x, ax) ->
             if   ax.ax_visibility <> `Hidden
@@ -2999,7 +3039,7 @@ module Theory = struct
   (* ------------------------------------------------------------------ *)
   let export (path : EcPath.path) (env : env) =
     let env = import path env in
-    { env with env_item = CTh_export path :: env.env_item }
+    { env with env_item = mk_citem true (CTh_export path) :: env.env_item }
 
   (* ------------------------------------------------------------------ *)
   let rec filter clears root cleared items =
@@ -3019,38 +3059,41 @@ module Theory = struct
     let thclear = inclear root in
 
     fun cleared item ->
-      match item with
-      | CTh_theory (x, (cth, mode)) ->
-         let cleared, items =
-           let xpath = EcPath.pqname root x in
-           filter_th clears xpath cleared cth.cth_struct in
-         let item = items |> omap (fun items ->
-           let cth = { cth with cth_struct = items } in
-           CTh_theory (x, (cth, mode))) in
-         (cleared, item)
+      let cleared, item_r =
+        match item.cti_item with
+        | CTh_theory (x, (cth, mode)) ->
+           let cleared, items =
+             let xpath = EcPath.pqname root x in
+             filter_th clears xpath cleared cth.cth_struct in
+           let item = items |> omap (fun items ->
+             let cth = { cth with cth_struct = items } in
+             CTh_theory (x, (cth, mode))) in
+           (cleared, item)
 
-      | _ -> let item = match item with
+        | _ -> let item_r = match item.cti_item with
 
-      | CTh_axiom (_, { ax_kind = `Lemma }) when thclear ->
-          None
+        | CTh_axiom (_, { ax_kind = `Lemma }) when thclear ->
+            None
 
-      | CTh_axiom (x, ({ ax_kind = `Axiom (tags, false) } as ax)) when thclear ->
-          Some (CTh_axiom (x, { ax with ax_kind = `Axiom (tags, true) }))
+        | CTh_axiom (x, ({ ax_kind = `Axiom (tags, false) } as ax)) when thclear ->
+            Some (CTh_axiom (x, { ax with ax_kind = `Axiom (tags, true) }))
 
-      | CTh_addrw (p, ps) ->
-          let ps = List.filter ((not) |- inclear |- oget |- EcPath.prefix) ps in
-          if List.is_empty ps then None else Some (CTh_addrw (p, ps))
+        | CTh_addrw (p, ps) ->
+            let ps = List.filter ((not) |- inclear |- oget |- EcPath.prefix) ps in
+            if List.is_empty ps then None else Some (CTh_addrw (p, ps))
 
-      | CTh_auto (lc, lvl, base, ps) ->
-          let ps = List.filter ((not) |- inclear |- oget |- EcPath.prefix) ps in
-          if List.is_empty ps then None else Some (CTh_auto (lc, lvl, base, ps))
+        | CTh_auto (lc, lvl, base, ps) ->
+            let ps = List.filter ((not) |- inclear |- oget |- EcPath.prefix) ps in
+            if List.is_empty ps then None else Some (CTh_auto (lc, lvl, base, ps))
 
-      | (CTh_export p) as item ->
-          if Sp.mem p cleared then None else Some item
+        | (CTh_export p) as item ->
+            if Sp.mem p cleared then None else Some item
 
-      | _ as item -> Some item
+        | _ as item -> Some item
 
-      in (cleared, item)
+        in (cleared, item_r)
+
+      in (cleared, omap (fun item_r -> { item with cti_item = item_r; }) item_r)
 
   (* ------------------------------------------------------------------ *)
   let close ?(clears = []) ?(pempty = `No) env =

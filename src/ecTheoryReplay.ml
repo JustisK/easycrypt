@@ -41,7 +41,7 @@ type 'a ovrenv = {
 and 'a ovrhooks = {
   henv     : 'a -> EcEnv.env;
   hty      : 'a -> (symbol * tydecl) -> 'a;
-  hop      : 'a -> (symbol * operator) -> 'a;
+  hop      : 'a -> ?import:EcEnv.import -> (symbol * operator) -> 'a;
   hmodty   : 'a -> (symbol * module_sig) -> 'a;
   hmod     : 'a -> bool -> module_expr -> 'a;
   hax      : 'a -> bool -> (symbol * axiom) -> 'a;
@@ -415,13 +415,13 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
   end
 
 (* -------------------------------------------------------------------- *)
-and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
+and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (import, x, oopd) =
   let scenv = ove.ovre_hooks.henv scope in
   match Msym.find_opt x ove.ovre_ovrd.evc_ops with
   | None ->
       let (subst, x) = rename ove subst (`Op, x) in
       let oopd = EcSubst.subst_op subst oopd in
-      (subst, ops, proofs, ove.ovre_hooks.hop scope (x, oopd))
+      (subst, ops, proofs, ove.ovre_hooks.hop scope ~import (x, oopd))
 
   | Some { pl_desc = (opov, opmode); pl_loc = loc; } ->
       let nosmt =
@@ -468,10 +468,8 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
               let body    = body |> EcTypes.e_mapty uni in
               let ty      = uni ty in
               let tparams = EcUnify.UniEnv.tparams ue in
-              let newop   =
-                mk_op ~resolve:(oopd.op_resolve && opmode = `Alias)
-                  tparams ty (Some (OP_Plain (body, nosmt)))
-              in (newop, body)
+              let newop   = mk_op tparams ty (Some (OP_Plain (body, nosmt))) in
+              (newop, body)
 
           | `ByPath p -> begin
             match EcEnv.Op.by_path_opt p scenv with
@@ -480,8 +478,7 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
                 let body   = EcTypes.e_op p tyargs refop.op_ty in
                 let decl   =
                   { refop with
-                      op_kind = OB_oper (Some (OP_Plain (body, nosmt)));
-                      op_resolve = oopd.op_resolve && opmode = `Alias; } in
+                      op_kind = OB_oper (Some (OP_Plain (body, nosmt))); } in
                 (decl, body)
 
             | _ -> clone_error scenv (CE_UnkOverride(OVK_Operator, EcPath.toqsymbol p))
@@ -510,21 +507,27 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopd) =
       end;
 
       let scope =
-        if   keep_of_mode opmode
-        then ove.ovre_hooks.hop scope (x, newop)
-        else scope in
+        match opmode with
+        | `Alias ->
+            ove.ovre_hooks.hop scope ~import (x, newop)
 
-      (subst, ops, proofs, scope)
+        | `Inline `Keep ->
+            ove.ovre_hooks.hop scope ~import:EcEnv.noimport (x, newop)
+
+        | `Inline `Clear ->
+            scope
+
+      in (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
-and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
+and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (import, x, oopr) =
   let scenv = ove.ovre_hooks.henv scope in
 
   match Msym.find_opt x ove.ovre_ovrd.evc_preds with
   | None ->
       let subst, x = rename ove subst (`Pred, x) in
       let oopr = EcSubst.subst_op subst oopr in
-      (subst, ops, proofs, ove.ovre_hooks.hop scope (x, oopr))
+      (subst, ops, proofs, ove.ovre_hooks.hop ~import scope (x, oopr))
 
   | Some { pl_desc = (prov, prmode); pl_loc = loc; } ->
     let refpr = EcSubst.subst_op subst oopr in
@@ -567,8 +570,7 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
               let newpr   =
                 { op_tparams = tparams;
                   op_ty      = body.EcFol.f_ty;
-                  op_kind    = OB_pred (Some (PR_Plain body));
-                  op_resolve = oopr.op_resolve && (prmode = `Alias); } in
+                  op_kind    = OB_pred (Some (PR_Plain body)); } in
               (newpr, body)
 
           | `ByPath p -> begin
@@ -577,8 +579,7 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
                 let tyargs = List.map (fun (x, _) -> EcTypes.tvar x) refop.op_tparams in
                 let body   = EcFol.f_op p tyargs refop.op_ty in
                 { refop with
-                    op_kind    = OB_pred (Some (PR_Plain body));
-                    op_resolve = oopr.op_resolve && (prmode = `Alias); }, body
+                    op_kind    = OB_pred (Some (PR_Plain body)); }, body
 
             | _ -> clone_error scenv (CE_UnkOverride(OVK_Predicate, EcPath.toqsymbol p))
           end
@@ -601,12 +602,19 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oopr) =
         with Incompatible err ->
           clone_error scenv (CE_OpIncompatible ((snd ove.ovre_prefix, x), err))
       end;
-      let scope =
-        if   keep_of_mode prmode
-        then ove.ovre_hooks.hop scope (x, newpr)
-        else scope in
 
-      (subst, ops, proofs, scope)
+      let scope =
+        match prmode with
+        | `Alias ->
+            ove.ovre_hooks.hop scope ~import (x, newpr)
+
+        | `Inline `Keep ->
+            ove.ovre_hooks.hop scope ~import:EcEnv.noimport (x, newpr)
+
+        | `Inline `Clear ->
+            scope
+
+      in (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
 and replay_ntd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, oont) =
@@ -862,15 +870,15 @@ and replay_instance
 
 (* -------------------------------------------------------------------- *)
 and replay1 (ove : _ ovrenv) (subst, ops, proofs, scope) item =
-  match item with
+  match item.cti_item with
   | CTh_type (x, otyd) ->
      replay_tyd ove (subst, ops, proofs, scope) (x, otyd)
 
   | CTh_operator (x, ({ op_kind = OB_oper _ } as oopd)) ->
-     replay_opd ove (subst, ops, proofs, scope) (x, oopd)
+     replay_opd ove (subst, ops, proofs, scope) (item.cti_import, x, oopd)
 
   | CTh_operator (x, ({ op_kind = OB_pred _} as oopr)) ->
-     replay_prd ove (subst, ops, proofs, scope) (x, oopr)
+     replay_prd ove (subst, ops, proofs, scope) (item.cti_import, x, oopr)
 
   | CTh_operator (x, ({ op_kind = OB_nott _} as oont)) ->
      replay_ntd ove (subst, ops, proofs, scope) (x, oont)

@@ -480,4 +480,4 @@ let select_op ?(hidden = false) ?(filter = fun _ -> true) tvi env name ue psig =
     with E.Failure -> None
 
   in
-    List.pmap select (EcEnv.Op.all ~hidden ~check:filter name env)
+    List.pmap select (EcEnv.Op.all ~check:filter name env)

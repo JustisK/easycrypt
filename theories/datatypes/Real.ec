@@ -27,7 +27,6 @@ op "`|_|" x = if from_int 0 <= x then x else -x.
 abbrev b2r (b:bool) = if b then from_int 1 else from_int 0.
 
 (* -------------------------------------------------------------------- *)
-
 lemma nosmt fromint0 : 0%r = CoreReal.zero by [].
 lemma nosmt fromint1 : 1%r = CoreReal.one  by [].
 
@@ -53,7 +52,6 @@ lemma nosmt fromint_abs  (z : int) : `|z|%r = `|z%r| by smt ml=0.
 hint rewrite lte_fromint : le_fromint lt_fromint.
 
 (* -------------------------------------------------------------------- *)
-
 theory RField.
   clone include Ring.Field with
     type t <- real,
@@ -101,7 +99,6 @@ theory RField.
 
   lemma nosmt double_half (x : real) : x / 2%r + x / 2%r = x.
   proof. by rewrite -ofintR -mulrDl -mul1r2z -mulrA divff // ofintR. qed.
-
 end RField.
 import RField.
 

@@ -486,15 +486,17 @@ let subscope (scope : scope) (mode : EcTheory.thmode) (name : symbol) =
     sc_section    = scope.sc_section; }
 
 (* -------------------------------------------------------------------- *)
-let maybe_add_to_section scope item =
+let maybe_add_to_section ?(import = EcEnv.import0) scope item =
   match EcSection.opath scope.sc_section with
   | None -> scope
   | Some (_, sp) -> begin
       match EcPath.p_equal sp (EcEnv.root scope.sc_env) with
       | false -> scope
       | true  ->
-        let ec = EcSection.add_item item scope.sc_section in
-          { scope with sc_section = ec }
+        let ec = EcSection.add_item
+            (EcTheory.mk_citem import.im_atimport item)
+            scope.sc_section in
+        { scope with sc_section = ec }
   end
 
 (* -------------------------------------------------------------------- *)
@@ -821,10 +823,10 @@ module Ax = struct
   type mode = [`WeakCheck | `Check | `Report]
 
   (* ------------------------------------------------------------------ *)
-  let bind (scope : scope) local ((x, ax) : _ * axiom) =
+  let bind ?import (scope : scope) local ((x, ax) : _ * axiom) =
     assert (scope.sc_pr_uc = None);
-    let scope = { scope with sc_env = EcEnv.Ax.bind x ax scope.sc_env; } in
-    let scope = maybe_add_to_section scope (EcTheory.CTh_axiom (x, ax)) in
+    let scope = { scope with sc_env = EcEnv.Ax.bind ?import x ax scope.sc_env; } in
+    let scope = maybe_add_to_section ?import scope (EcTheory.CTh_axiom (x, ax)) in
     let scope =
       match EcSection.opath scope.sc_section with
       | None -> scope
@@ -1107,7 +1109,7 @@ module Op = struct
   module TTC = EcProofTyping
   module EHI = EcHiInductive
 
-  let bind (scope : scope) ((x, op) : _ * operator) =
+  let bind (scope : scope) ?import ((x, op) : _ * operator) =
     assert (scope.sc_pr_uc = None);
 
     (match EcSection.olocals scope.sc_section with
@@ -1116,8 +1118,8 @@ module Op = struct
         if EcSection.opdecl_use_local_or_abs op locals then
           hierror "operators cannot use local/abstracts modules");
 
-    let scope = { scope with sc_env = EcEnv.Op.bind x op scope.sc_env } in
-    let scope = maybe_add_to_section scope (EcTheory.CTh_operator (x, op)) in
+    let scope = { scope with sc_env = EcEnv.Op.bind ?import x op scope.sc_env } in
+    let scope = maybe_add_to_section scope ?import (EcTheory.CTh_operator (x, op)) in
       scope
 
   let add (scope : scope) (op : poperator located) =
@@ -1386,13 +1388,13 @@ module Mod = struct
         Mx.fold add use.EcEnv.us_pv EcPath.Sx.empty in
       EcEnv.Mod.add_restr_to_locals (rx,EcPath.Sm.empty) env
 
-  let bind (scope : scope) (local : bool) (m : module_expr) =
+  let bind (scope : scope) ?import (local : bool) (m : module_expr) =
     assert (scope.sc_pr_uc = None);
     let scope =
       { scope with
-          sc_env = EcEnv.Mod.bind m.me_name m scope.sc_env; }
+          sc_env = EcEnv.Mod.bind ?import m.me_name m scope.sc_env; }
     in
-    let scope = maybe_add_to_section scope (EcTheory.CTh_module m) in
+    let scope = maybe_add_to_section scope ?import (EcTheory.CTh_module m) in
     let scope =
       match local with
       | false -> scope
@@ -1461,19 +1463,19 @@ end
 
 (* -------------------------------------------------------------------- *)
 module ModType = struct
-  let bind (scope : scope) ((x, tysig) : _ * module_sig) =
+  let bind (scope : scope) ?import ((x, tysig) : _ * module_sig) =
     assert (scope.sc_pr_uc = None);
     let scope =
       { scope with
-          sc_env = EcEnv.ModTy.bind x tysig scope.sc_env; }
+          sc_env = EcEnv.ModTy.bind ?import x tysig scope.sc_env; }
     in
-    let scope = maybe_add_to_section scope (EcTheory.CTh_modtype (x, tysig)) in
+    let scope = maybe_add_to_section scope ?import (EcTheory.CTh_modtype (x, tysig)) in
       scope
 
   let add (scope : scope) (name : symbol) (i : pmodule_sig) =
     assert (scope.sc_pr_uc = None);
     let tysig = EcTyping.transmodsig scope.sc_env name i in
-      bind scope (name, tysig)
+    bind scope (name, tysig)
 end
 
 (* -------------------------------------------------------------------- *)
@@ -1494,7 +1496,7 @@ module Ty = struct
       hierror ~loc:x.pl_loc "duplicated type/type-class name `%s'" x.pl_desc
 
   (* ------------------------------------------------------------------ *)
-  let bind (scope : scope) ((x, tydecl) : (_ * tydecl)) =
+  let bind ?import (scope : scope) ((x, tydecl) : (_ * tydecl)) =
     assert (scope.sc_pr_uc = None);
 
     (match EcSection.olocals scope.sc_section with
@@ -1503,8 +1505,8 @@ module Ty = struct
         if EcSection.tydecl_use_local_or_abs tydecl locals then
           hierror "types cannot use local/abstracts modules");
 
-    let scope = { scope with sc_env = EcEnv.Ty.bind x tydecl scope.sc_env; } in
-    let scope = maybe_add_to_section scope (EcTheory.CTh_type (x, tydecl)) in
+    let scope = { scope with sc_env = EcEnv.Ty.bind ?import x tydecl scope.sc_env; } in
+    let scope = maybe_add_to_section scope ?import (EcTheory.CTh_type (x, tydecl)) in
       scope
 
   (* ------------------------------------------------------------------ *)
@@ -1539,10 +1541,10 @@ module Ty = struct
       bind scope (unloc name, tydecl)
 
   (* ------------------------------------------------------------------ *)
-  let bindclass (scope : scope) (x, tc) =
+  let bindclass ?import (scope : scope) (x, tc) =
     assert (scope.sc_pr_uc = None);
-    let scope = { scope with sc_env = EcEnv.TypeClass.bind x tc scope.sc_env; } in
-    let scope = maybe_add_to_section scope (EcTheory.CTh_typeclass (x, tc)) in
+    let scope = { scope with sc_env = EcEnv.TypeClass.bind ?import x tc scope.sc_env; } in
+    let scope = maybe_add_to_section scope ?import (EcTheory.CTh_typeclass (x, tc)) in
       scope
 
   (* ------------------------------------------------------------------ *)
@@ -1985,7 +1987,7 @@ module Theory = struct
   (* ------------------------------------------------------------------ *)
   let exit ?(pempty = `ClearOnly) ?(clears =[]) (scope : scope) =
     let rec add_restr1 section where env item : EcEnv.env =
-      match item with
+      match item.cti_item with
       | EcTheory.CTh_theory (name, th) ->
           add_restr section (EcPath.pqname where name) th env
 
@@ -2145,16 +2147,18 @@ module Section = struct
         let scenv  = scope.sc_env in
         let scope  = { scope with sc_env = oenv; sc_section = osc; } in
 
-        let rec bind1 scope item =
+        let rec bind1 scope EcTheory.{ cti_item = item; cti_import = import } =
+          let import = EcEnv.{ im_immediate = true; im_atimport = import; } in
+
           match item with
-          | T.CTh_type     (x, ty) -> Ty.bind scope (x, ty)
-          | T.CTh_operator (x, op) -> Op.bind scope (x, op)
-          | T.CTh_modtype  (x, mt) -> ModType.bind scope (x, mt)
+          | T.CTh_type     (x, ty) -> Ty.bind ~import scope (x, ty)
+          | T.CTh_operator (x, op) -> Op.bind ~import scope (x, op)
+          | T.CTh_modtype  (x, mt) -> ModType.bind ~import scope (x, mt)
 
           | T.CTh_module me ->
             let mep = EcPath.pqname (path scope) me.me_name in
               if not (EcSection.is_local `Module mep locals) then
-                Mod.bind scope false me
+                Mod.bind ~import scope false me
               else
                 scope
 
@@ -2164,7 +2168,7 @@ module Section = struct
             | `Lemma   ->
                 let axp = EcPath.pqname (path scope) x in
                   if not (EcSection.is_local `Lemma axp locals) then
-                    Ax.bind scope false
+                    Ax.bind ~import scope false
                       (x, { ax with ax_spec =
                               EcSection.generalize scenv locals ax.ax_spec })
                   else
@@ -2177,27 +2181,27 @@ module Section = struct
           | T.CTh_theory (x, (th, thmode)) ->
               let scope = Theory.enter scope thmode x in
               let scope = List.fold_left bind1 scope th.EcTheory.cth_struct in
-              let _, scope = Theory.exit scope in
+              let _, scope = Theory.exit scope in (* FIXME *)
                 scope
 
-          | T.CTh_typeclass (x, tc) -> Ty.bindclass scope (x, tc)
+          | T.CTh_typeclass (x, tc) -> Ty.bindclass ~import scope (x, tc)
 
           | T.CTh_instance (p, cr) ->
               { scope with
-                sc_env = EcEnv.TypeClass.add_instance p cr scope.sc_env }
+                sc_env = EcEnv.TypeClass.add_instance ~import p cr scope.sc_env }
 
           | T.CTh_baserw x ->
-              { scope with sc_env = EcEnv.BaseRw.add x scope.sc_env }
+              { scope with sc_env = EcEnv.BaseRw.add ~import x scope.sc_env }
 
           | T.CTh_addrw (p, l) ->
-              { scope with sc_env = EcEnv.BaseRw.addto p l scope.sc_env }
+              { scope with sc_env = EcEnv.BaseRw.addto ~import p l scope.sc_env }
 
           | T.CTh_reduction rule ->
-              { scope with sc_env = EcEnv.Reduction.add rule scope.sc_env }
+              { scope with sc_env = EcEnv.Reduction.add ~import rule scope.sc_env }
 
           | T.CTh_auto (local, level, base, ps) ->
               { scope with sc_env =
-                  EcEnv.Auto.add ~local ~level ?base ps scope.sc_env }
+                  EcEnv.Auto.add ~import ~local ~level ?base ps scope.sc_env }
         in
 
         List.fold_left bind1 scope oitems

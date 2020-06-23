@@ -15,7 +15,12 @@ open EcModules
 (* -------------------------------------------------------------------- *)
 type theory = theory_item list
 
-and theory_item =
+and theory_item = {
+  ti_item   : theory_item_r;
+  ti_import : bool;
+}
+
+and theory_item_r =
   | Th_type      of (symbol * tydecl)
   | Th_operator  of (symbol * operator)
   | Th_axiom     of (symbol * axiom)
@@ -67,7 +72,12 @@ and ctheory_desc =
 
 and ctheory_struct = ctheory_item list
 
-and ctheory_item =
+and ctheory_item = {
+  cti_item   : ctheory_item_r;
+  cti_import : bool;
+}
+
+and ctheory_item_r =
   | CTh_type      of (symbol * tydecl)
   | CTh_operator  of (symbol * operator)
   | CTh_axiom     of (symbol * axiom)
@@ -89,6 +99,8 @@ and ctheory_clone = {
 
 and ctheory_override =
 | CTHO_Type   of EcTypes.ty
+
+val mk_citem : bool -> ctheory_item_r -> ctheory_item
 
 (* -------------------------------------------------------------------- *)
 val module_comps_of_module_sig_comps:
