@@ -62,12 +62,6 @@ exception DuplicatedBinding of symbol
 exception NotReducible
 
 (* -------------------------------------------------------------------- *)
-type import = { im_immediate : bool; im_atimport : bool; }
-
-val import0  : import
-val noimport : import
-
-(* -------------------------------------------------------------------- *)
 type meerror =
 | UnknownMemory of [`Symbol of symbol | `Memory of memory]
 

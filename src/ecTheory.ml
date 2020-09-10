@@ -17,11 +17,17 @@ open EcModules
 module Sp = EcPath.Sp
 
 (* -------------------------------------------------------------------- *)
+type import = { im_immediate : bool; im_atimport : bool; }
+
+let import0  = { im_immediate =  true; im_atimport =  true; }
+let noimport = { im_immediate = false; im_atimport = false; }
+
+(* -------------------------------------------------------------------- *)
 type theory = theory_item list
 
 and theory_item = {
   ti_item   : theory_item_r;
-  ti_import : bool;
+  ti_import : import;
 }
 
 and theory_item_r =
@@ -78,7 +84,7 @@ and ctheory_struct = ctheory_item list
 
 and ctheory_item = {
   cti_item   : ctheory_item_r;
-  cti_import : bool;
+  cti_import : import;
 }
 
 and ctheory_item_r =
@@ -104,7 +110,7 @@ and ctheory_clone = {
 and ctheory_override =
 | CTHO_Type   of EcTypes.ty
 
-let mk_citem (import : bool) (item : ctheory_item_r) =
+let mk_citem (import : import) (item : ctheory_item_r) =
   { cti_import = import; cti_item = item; }
 
 (* -------------------------------------------------------------------- *)

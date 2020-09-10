@@ -41,9 +41,9 @@ type 'a ovrenv = {
 and 'a ovrhooks = {
   henv     : 'a -> EcEnv.env;
   hty      : 'a -> (symbol * tydecl) -> 'a;
-  hop      : 'a -> ?import:EcEnv.import -> (symbol * operator) -> 'a;
-  hmodty   : 'a -> (symbol * module_sig) -> 'a;
-  hmod     : 'a -> bool -> module_expr -> 'a;
+  hop      : 'a -> ?import:EcTheory.import -> (symbol * operator) -> 'a;
+  hmodty   : 'a -> ?import:EcTheory.import -> (symbol * module_sig) -> 'a;
+  hmod     : 'a -> ?import:EcTheory.import -> bool -> module_expr -> 'a;
   hax      : 'a -> bool -> (symbol * axiom) -> 'a;
   hexport  : 'a -> EcPath.path -> 'a;
   hbaserw  : 'a -> symbol -> 'a;
@@ -512,7 +512,7 @@ and replay_opd (ove : _ ovrenv) (subst, ops, proofs, scope) (import, x, oopd) =
             ove.ovre_hooks.hop scope ~import (x, newop)
 
         | `Inline `Keep ->
-            ove.ovre_hooks.hop scope ~import:EcEnv.noimport (x, newop)
+            ove.ovre_hooks.hop scope ~import:EcTheory.noimport (x, newop)
 
         | `Inline `Clear ->
             scope
@@ -609,7 +609,7 @@ and replay_prd (ove : _ ovrenv) (subst, ops, proofs, scope) (import, x, oopr) =
             ove.ovre_hooks.hop scope ~import (x, newpr)
 
         | `Inline `Keep ->
-            ove.ovre_hooks.hop scope ~import:EcEnv.noimport (x, newpr)
+            ove.ovre_hooks.hop scope ~import:EcTheory.noimport (x, newpr)
 
         | `Inline `Clear ->
             scope

@@ -83,12 +83,6 @@ let ippath_as_path (ip : ipath) =
   match ip with IPPath p -> p | _ -> assert false
 
 (* -------------------------------------------------------------------- *)
-type import = { im_immediate : bool; im_atimport : bool; }
-
-let import0  = { im_immediate =  true; im_atimport =  true; }
-let noimport = { im_immediate = false; im_atimport = false; }
-
-(* -------------------------------------------------------------------- *)
 type varbind = {
   vb_type  : EcTypes.ty;
   vb_kind  : [`Var of EcTypes.pvar_kind | `Proj of int];
@@ -1305,7 +1299,7 @@ module TypeClass = struct
   let bind ?(import = import0) name tc env =
     let env = if import.im_immediate then rebind name tc env else env in
     { env with
-        env_item = mk_citem import.im_atimport (CTh_typeclass (name, tc)) :: env.env_item }
+        env_item = mk_citem import (CTh_typeclass (name, tc)) :: env.env_item }
 
   let lookup qname (env : env) =
     MC.lookup_typeclass qname env
@@ -1328,7 +1322,7 @@ module TypeClass = struct
         { env with env_tci = bind_instance ty cr env.env_tci }
       else env in
     { env with
-        env_item = mk_citem import.im_atimport (CTh_instance (ty, cr)) :: env.env_item; }
+        env_item = mk_citem import (CTh_instance (ty, cr)) :: env.env_item; }
 
   let get_instances env = env.env_tci
 end
@@ -1365,7 +1359,7 @@ module BaseRw = struct
     let ip  = IPPath p in
     { env with
         env_rwbase = Mip.add ip Sp.empty env.env_rwbase;
-        env_item   = mk_citem import.im_atimport (CTh_baserw name) :: env.env_item; }
+        env_item   = mk_citem import (CTh_baserw name) :: env.env_item; }
 
   let addto ?(import = import0) p l env =
     let env =
@@ -1379,7 +1373,7 @@ module BaseRw = struct
     in
 
     { env with
-        env_item = mk_citem import.im_atimport (CTh_addrw (p, l)) :: env.env_item; }
+        env_item = mk_citem import (CTh_addrw (p, l)) :: env.env_item; }
 
 end
 
@@ -1423,7 +1417,7 @@ module Reduction = struct
       else env in
 
     { env with
-        env_item = mk_citem import.im_atimport (CTh_reduction rules) :: env.env_item; }
+        env_item = mk_citem import (CTh_reduction rules) :: env.env_item; }
 
   let add1 (prule : path * rule_option * rule option) (env : env) =
     add [prule] env
@@ -1454,7 +1448,7 @@ module Auto = struct
       else env in
 
     { env with
-        env_item = mk_citem import.im_atimport
+        env_item = mk_citem import
             (CTh_auto (local, level, base, ps)) :: env.env_item; }
 
   let add1 ~local ~level ?base (p : path) (env : env) =
@@ -1581,7 +1575,7 @@ module Ty = struct
     let env = if import.im_immediate then rebind name ty env else env in
 
     { env with env_item =
-        mk_citem import.im_atimport (CTh_type (name, ty)) :: env.env_item }
+        mk_citem import (CTh_type (name, ty)) :: env.env_item }
 end
 
 (* -------------------------------------------------------------------- *)
@@ -2005,7 +1999,7 @@ module Mod = struct
   let bind ?(import = import0) name me env =
     let env = if import.im_immediate then MC.bind_mod name me env else env in
     { env with
-          env_item = mk_citem import.im_atimport (CTh_module me) :: env.env_item;
+          env_item = mk_citem import (CTh_module me) :: env.env_item;
           env_norm = ref !(env.env_norm); }
 
   let me_of_mt env name modty restr =
@@ -2516,7 +2510,7 @@ module ModTy = struct
   let bind ?(import = import0) name modty env =
     let env = if import.im_immediate then MC.bind_modty name modty env else env in
       { env with
-          env_item = mk_citem import.im_atimport (CTh_modtype (name, modty)) :: env.env_item }
+          env_item = mk_citem import (CTh_modtype (name, modty)) :: env.env_item }
 
   exception ModTypeNotEquiv
 
@@ -2616,7 +2610,7 @@ module Op = struct
 
     { env with
         env_ntbase = ofold List.cons env.env_ntbase nt;
-        env_item   = mk_citem import.im_atimport (CTh_operator(name, op)) :: env.env_item; }
+        env_item   = mk_citem import (CTh_operator(name, op)) :: env.env_item; }
 
   let rebind name op env =
     MC.bind_operator name op env
@@ -2722,7 +2716,7 @@ module Ax = struct
   let bind ?(import = import0) name ax env =
     let ax = NormMp.norm_ax env ax in
     let env = MC.bind_axiom name ax env in
-    { env with env_item = mk_citem import.im_atimport (CTh_axiom (name, ax)) :: env.env_item }
+    { env with env_item = mk_citem import (CTh_axiom (name, ax)) :: env.env_item }
 
   let rebind name ax env =
     MC.bind_axiom name ax env
@@ -2854,7 +2848,7 @@ module Theory = struct
     List.fold_left (bind_instance_cth_item path) inst cth.cth_struct
 
   and bind_instance_cth_item path inst item =
-    if not item.cti_import then inst else
+    if not item.cti_import.im_atimport then inst else
 
     let xpath x = EcPath.pqname path x in
 
@@ -2886,7 +2880,7 @@ module Theory = struct
     List.fold_left (bind_base_cth_item tx path) base cth.cth_struct
 
   and bind_base_cth_item tx path base item =
-    if not item.cti_import then base else
+    if not item.cti_import.im_atimport then base else
 
     let xpath x = EcPath.pqname path x in
 
@@ -2961,7 +2955,7 @@ module Theory = struct
 
     let env = MC.bind_theory name th env in
     let env = { env with env_item =
-      mk_citem import.im_atimport (CTh_theory (name, th)) :: env.env_item } in
+      mk_citem import (CTh_theory (name, th)) :: env.env_item } in
 
     match import, mode with
     | _, `Concrete ->
@@ -2986,7 +2980,7 @@ module Theory = struct
     let rec import (env : env) path (cth : ctheory) =
       let xpath x = EcPath.pqname path x in
       let rec import_cth_item (env : env) (item : ctheory_item) =
-        if not item.cti_import then env else
+        if not item.cti_import.im_atimport then env else
 
         match item.cti_item with
         | CTh_type (x, ty) ->
@@ -3039,7 +3033,7 @@ module Theory = struct
   (* ------------------------------------------------------------------ *)
   let export (path : EcPath.path) (env : env) =
     let env = import path env in
-    { env with env_item = mk_citem true (CTh_export path) :: env.env_item }
+    { env with env_item = mk_citem import0 (CTh_export path) :: env.env_item }
 
   (* ------------------------------------------------------------------ *)
   let rec filter clears root cleared items =

@@ -486,16 +486,14 @@ let subscope (scope : scope) (mode : EcTheory.thmode) (name : symbol) =
     sc_section    = scope.sc_section; }
 
 (* -------------------------------------------------------------------- *)
-let maybe_add_to_section ?(import = EcEnv.import0) scope item =
+let maybe_add_to_section ?(import = EcTheory.import0) scope item =
   match EcSection.opath scope.sc_section with
   | None -> scope
   | Some (_, sp) -> begin
       match EcPath.p_equal sp (EcEnv.root scope.sc_env) with
       | false -> scope
       | true  ->
-        let ec = EcSection.add_item
-            (EcTheory.mk_citem import.im_atimport item)
-            scope.sc_section in
+        let ec = EcSection.add_item (EcTheory.mk_citem import item) scope.sc_section in
         { scope with sc_section = ec }
   end
 
@@ -2148,7 +2146,7 @@ module Section = struct
         let scope  = { scope with sc_env = oenv; sc_section = osc; } in
 
         let rec bind1 scope EcTheory.{ cti_item = item; cti_import = import } =
-          let import = EcEnv.{ im_immediate = true; im_atimport = import; } in
+(*          let import = EcTheory.{ im_immediate = true; im_atimport = import; } in *)
 
           match item with
           | T.CTh_type     (x, ty) -> Ty.bind ~import scope (x, ty)

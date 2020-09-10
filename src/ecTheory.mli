@@ -13,11 +13,17 @@ open EcDecl
 open EcModules
 
 (* -------------------------------------------------------------------- *)
+type import = { im_immediate : bool; im_atimport : bool; }
+
+val import0  : import
+val noimport : import
+
+(* -------------------------------------------------------------------- *)
 type theory = theory_item list
 
 and theory_item = {
   ti_item   : theory_item_r;
-  ti_import : bool;
+  ti_import : import;
 }
 
 and theory_item_r =
@@ -74,7 +80,7 @@ and ctheory_struct = ctheory_item list
 
 and ctheory_item = {
   cti_item   : ctheory_item_r;
-  cti_import : bool;
+  cti_import : import;
 }
 
 and ctheory_item_r =
@@ -100,7 +106,7 @@ and ctheory_clone = {
 and ctheory_override =
 | CTHO_Type   of EcTypes.ty
 
-val mk_citem : bool -> ctheory_item_r -> ctheory_item
+val mk_citem : import -> ctheory_item_r -> ctheory_item
 
 (* -------------------------------------------------------------------- *)
 val module_comps_of_module_sig_comps:
