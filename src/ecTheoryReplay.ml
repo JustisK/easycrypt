@@ -40,7 +40,7 @@ type 'a ovrenv = {
 
 and 'a ovrhooks = {
   henv     : 'a -> EcEnv.env;
-  hty      : 'a -> (symbol * tydecl) -> 'a;
+  hty      : 'a -> ?import:EcTheory.import -> (symbol * tydecl) -> 'a;
   hop      : 'a -> ?import:EcTheory.import -> (symbol * operator) -> 'a;
   hmodty   : 'a -> ?import:EcTheory.import -> (symbol * module_sig) -> 'a;
   hmod     : 'a -> ?import:EcTheory.import -> bool -> module_expr -> 'a;
@@ -332,14 +332,14 @@ let rename ove subst (kind, name) =
   with Not_found -> (subst, name)
 
 (* -------------------------------------------------------------------- *)
-let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
+let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (import, x, otyd) =
   let scenv = ove.ovre_hooks.henv scope in
 
   match Msym.find_opt x ove.ovre_ovrd.evc_types with
   | None ->
       let otyd = EcSubst.subst_tydecl subst otyd in
       let subst, x = rename ove subst (`Type, x) in
-      (subst, ops, proofs, ove.ovre_hooks.hty scope (x, otyd))
+      (subst, ops, proofs, ove.ovre_hooks.hty scope ~import (x, otyd))
 
   | Some { pl_desc = (tydov, mode) } -> begin
       let newtyd, body =
@@ -374,7 +374,9 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
 
       let subst, x =
         match mode with
-        | `Alias -> rename ove subst (`Type, x)
+        | `Alias ->
+            rename ove subst (`Type, x)
+
         | `Inline _ ->
           let subst =
             EcSubst.add_tydef
@@ -396,7 +398,7 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
             | _, _ -> subst
 
           in
-          subst, x in
+          (subst, x) in
 
       let refotyd = EcSubst.subst_tydecl subst otyd in
 
@@ -407,11 +409,17 @@ let rec replay_tyd (ove : _ ovrenv) (subst, ops, proofs, scope) (x, otyd) =
       end;
 
       let scope =
-        if   keep_of_mode mode
-        then ove.ovre_hooks.hty scope (x, newtyd)
-        else scope in
+        match mode with
+        | `Alias ->
+            ove.ovre_hooks.hty scope ~import (x, newtyd)
 
-      (subst, ops, proofs, scope)
+        | `Inline `Keep ->
+            ove.ovre_hooks.hty scope ~import:EcTheory.noimport (x, newtyd)
+
+        | `Inline `Clear ->
+            scope
+
+      in (subst, ops, proofs, scope)
   end
 
 (* -------------------------------------------------------------------- *)
@@ -872,7 +880,7 @@ and replay_instance
 and replay1 (ove : _ ovrenv) (subst, ops, proofs, scope) item =
   match item.cti_item with
   | CTh_type (x, otyd) ->
-     replay_tyd ove (subst, ops, proofs, scope) (x, otyd)
+     replay_tyd ove (subst, ops, proofs, scope) (item.cti_import, x, otyd)
 
   | CTh_operator (x, ({ op_kind = OB_oper _ } as oopd)) ->
      replay_opd ove (subst, ops, proofs, scope) (item.cti_import, x, oopd)

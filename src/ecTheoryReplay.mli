@@ -36,7 +36,7 @@ type 'a ovrenv = {
 
 and 'a ovrhooks = {
   henv     : 'a -> EcEnv.env;
-  hty      : 'a -> (symbol * tydecl) -> 'a;
+  hty      : 'a -> ?import:EcTheory.import -> (symbol * tydecl) -> 'a;
   hop      : 'a -> ?import:EcTheory.import -> (symbol * operator) -> 'a;
   hmodty   : 'a -> ?import:EcTheory.import -> (symbol * module_sig) -> 'a;
   hmod     : 'a -> ?import:EcTheory.import -> bool -> module_expr -> 'a;

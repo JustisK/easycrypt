@@ -1494,7 +1494,7 @@ module Ty = struct
       hierror ~loc:x.pl_loc "duplicated type/type-class name `%s'" x.pl_desc
 
   (* ------------------------------------------------------------------ *)
-  let bind ?import (scope : scope) ((x, tydecl) : (_ * tydecl)) =
+  let bind (scope : scope) ?import ((x, tydecl) : (_ * tydecl)) =
     assert (scope.sc_pr_uc = None);
 
     (match EcSection.olocals scope.sc_section with
