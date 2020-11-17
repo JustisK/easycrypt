@@ -238,26 +238,32 @@ module EqTest = struct
         EcSubst.add_module s id1 (EcPath.mident id2)) EcSubst.empty p1 p2
 
   let rec for_module_type env ~norm mt1 mt2 =
-    let p1 = mt1.mt_params in
-    let p2 = mt2.mt_params in
-    List.for_all2
-      (fun (_,mt1) (_,mt2) -> for_module_type env ~norm mt1 mt2) p1 p2 &&
-    let s = add_modules p2 p1 in
-    let args1 = mt1.mt_args in
-    let args2 = List.map (EcSubst.subst_mpath s) mt2.mt_args in
-    EcPath.p_equal mt1.mt_name mt2.mt_name &&
-      List.for_all2 (for_mp env ~norm) args1 args2
+    if EcPath.p_equal mt1.mt_name mt2.mt_name then
+      let p1 = mt1.mt_params in
+      let p2 = mt2.mt_params in
+      List.for_all2
+        (fun (_,mt1) (_,mt2) -> for_module_type env ~norm mt1 mt2) p1 p2 &&
+        let s = add_modules p2 p1 in
+        let args1 = mt1.mt_args in
+        let args2 = List.map (EcSubst.subst_mpath s) mt2.mt_args in
+        List.for_all2 (for_mp env ~norm) args1 args2
+    else if norm then
+      let s1 = EcEnv.ModTy.sig_of_mt env mt1 in
+      let s2 = EcEnv.ModTy.sig_of_mt env mt2 in
+      for_module_sig env ~norm s1 s2
+    else
+      false
 
-  let for_module_sig_body_item env ~norm i1 i2 =
+  and for_module_sig_body_item env ~norm i1 i2 =
     match i1, i2 with
     | Tys_function (fs1,oi1), Tys_function(fs2,oi2) ->
       for_funsig env fs1 fs2 &&
         for_oracle_info env norm oi1 oi2
 
-  let for_module_sig_body env ~norm b1 b2 =
+  and for_module_sig_body env ~norm b1 b2 =
     List.for_all2 (for_module_sig_body_item env ~norm) b1 b2
 
-  let for_module_sig env ~norm ms1 ms2 =
+  and for_module_sig env ~norm ms1 ms2 =
     let p1 = ms1.mis_params in
     let p2 = ms2.mis_params in
     List.for_all2

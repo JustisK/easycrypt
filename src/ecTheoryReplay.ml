@@ -688,19 +688,28 @@ and replay_modtype
       (subst, ops, proofs, ove.ovre_hooks.hmodty scope (x, modty))
 
   | Some { pl_desc = (newname, mode) } ->
-      let subst, name = rename ove subst (`Module, x) in
-      let modty = EcSubst.subst_modsig subst modty in
       let env   = ove.ovre_hooks.henv scope in
-      let newmt = snd (EcEnv.ModTy.lookup newname env) in (* FIXME *)
-
+      let np, newmt = EcEnv.ModTy.lookup newname env in
+      let subst, name =
+        match mode with
+        | `Alias -> rename ove subst (`Module, x)
+        | `Inline _ ->
+          let subst = EcSubst.add_path subst (xpath ove x) np in
+          subst, x in
+      let modty = EcSubst.subst_modsig subst modty in
       if not (EcReduction.EqTest.for_module_sig env modty newmt) then
+      begin
+          let ppe = EcPrinting.PPEnv.ofenv env in
+          Format.eprintf "me = %a@."
+            (EcPrinting.pp_modsig ppe) (np, modty);
+          Format.eprintf "me = %a@."
+            (EcPrinting.pp_modsig ppe) (np, newmt);
         clone_error env (CE_ModTyIncompatible (snd ove.ovre_prefix, x));
-
+        end;
       let scope =
         if   keep_of_mode mode
         then ove.ovre_hooks.hmodty scope (name, newmt)
         else scope in
-
       (subst, ops, proofs, scope)
 
 (* -------------------------------------------------------------------- *)
@@ -715,16 +724,45 @@ and replay_mod
       (subst, ops, proofs, ove.ovre_hooks.hmod scope ove.ovre_local me)
 
   | Some { pl_desc = (newname, mode) } ->
-      let subst, name = rename ove subst (`Module, me.me_name) in
-      let me    = EcSubst.subst_module subst me in
-      let me    = { me with me_name = name; } in
+      let name     = me.me_name in
       let env   = ove.ovre_hooks.henv scope in
-      let newme = snd (EcEnv.Mod.lookup newname env) in (* FIXME *)
+
+      let mp, newme = EcEnv.Mod.lookup newname env in
+
+      let np =
+        match mp.m_top with
+        | `Concrete (p, None) -> p
+        | _ -> assert false
+      in
+
+      let substme = EcSubst.add_path subst (xpath ove name) np in
+
+      let me    = EcSubst.subst_module substme me in
+      let me    = { me with me_name = name; } in
       let newme = { newme with me_name = name; } in
 
       if not (EcReduction.EqTest.for_module_expr env me newme) then
-        clone_error env (CE_ModIncompatible (snd ove.ovre_prefix, name));
+        begin
+          let ppe = EcPrinting.PPEnv.ofenv env in
+          Format.eprintf "me = %a@."
+            (EcPrinting.pp_modexp ppe) (mp, me);
+          Format.eprintf "me = %a@."
+            (EcPrinting.pp_modexp ppe) (mp, newme);
+          clone_error env (CE_ModIncompatible (snd ove.ovre_prefix, name))
+        end;
 
+      let (subst, _) =
+        match mode with
+        | `Alias ->
+          rename ove subst (`Module, name)
+        | `Inline _ ->
+          substme, EcPath.basename np in
+
+      let newme =
+        if mode = `Alias then
+          {newme with me_body = ME_Alias (List.length newme.me_sig.mis_params,
+                                          mp)}
+        else newme in
       let scope =
         if   keep_of_mode mode
         then ove.ovre_hooks.hmod scope ove.ovre_local newme
